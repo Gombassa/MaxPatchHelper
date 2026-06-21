@@ -22,6 +22,37 @@ class PoliteWebScraper:
         self.session.headers.update({"User-Agent": DEFAULT_USER_AGENT})
         self.visited_urls = set()
 
+    def is_valid_url(self, url):
+        """Verify the URL is within the target legacy docs and API subpaths, excluding Jitter."""
+        parsed = urlparse(url)
+        if "docs.cycling74.com" not in parsed.netloc:
+            return False
+        
+        path = parsed.path.lower()
+        # Allow the base/index path itself
+        if path in ["/legacy/max8", "/legacy/max8/", "/legacy/max8/index.html"]:
+            return True
+            
+        # Limit strictly to the target directories
+        valid_prefixes = [
+            "/legacy/max8/refpages/",
+            "/legacy/max8/tutorials/",
+            "/legacy/max8/vignettes/",
+            "/apiref/"
+        ]
+        
+        if not any(path.startswith(prefix) for prefix in valid_prefixes):
+            return False
+            
+        # Exclude Jitter (video/matrix) objects, tutorials, and vignettes
+        filename = path.split('/')[-1]
+        if filename.startswith("jit.") or filename.startswith("jit_"):
+            return False
+        if "jitter" in path:
+            return False
+            
+        return True
+
     def get_page(self, url):
         """Fetch page content politely."""
         if url in self.visited_urls:
@@ -84,11 +115,14 @@ class PoliteWebScraper:
             "tables": tables_data
         }
 
-    def crawl_docs(self, start_url, max_pages=100):
+    def crawl_docs(self, start_url, max_pages=100, dry_run=False):
         """Simple recursive crawl starting from a index URL."""
-        os.makedirs(RAW_WEB_DIR, exist_ok=True)
+        if not dry_run:
+            os.makedirs(RAW_WEB_DIR, exist_ok=True)
+            
         to_visit = [start_url]
         pages_crawled = 0
+        discovered_matches = set()
 
         while to_visit and pages_crawled < max_pages:
             current_url = to_visit.pop(0)
@@ -99,24 +133,50 @@ class PoliteWebScraper:
             if not html:
                 continue
 
-            parsed_data = self.parse_object_page(html, current_url)
-            filename = f"web_{pages_crawled}_{parsed_data['title'].replace(' ', '_').lower()}.json"
-            filepath = os.path.join(RAW_WEB_DIR, filename)
+            # Record page match if it's a valid targeted subpath
+            if self.is_valid_url(current_url) and current_url != start_url:
+                discovered_matches.add(current_url)
+
+            soup = BeautifulSoup(html, 'html.parser')
             
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(parsed_data, f, indent=2, ensure_ascii=False)
-            
-            pages_crawled += 1
-            print(f"[Web Scraper] Saved {filename} ({pages_crawled}/{max_pages})")
+            if not dry_run:
+                parsed_data = self.parse_object_page(html, current_url)
+                safe_title = re.sub(r'[\\/*?:"<>|]', '', parsed_data['title']).replace(' ', '_').lower()
+                filename = f"web_{pages_crawled}_{safe_title}.json"
+                filepath = os.path.join(RAW_WEB_DIR, filename)
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(parsed_data, f, indent=2, ensure_ascii=False)
+                
+                pages_crawled += 1
+                print(f"[Web Scraper] Saved {filename} ({pages_crawled}/{max_pages})")
+            else:
+                pages_crawled += 1
+                title_elem = soup.find('h1')
+                title = title_elem.get_text().strip() if title_elem else "Unknown Page"
+                print(f"[Dry Run] Discovered Match #{len(discovered_matches)}: {title} ({current_url})")
+
+            # Periodic progress updates
+            if pages_crawled % 100 == 0:
+                print(f"\n==================================================")
+                print(f"[PROGRESS] Crawled {pages_crawled} pages total. Discovered {len(discovered_matches)} valid doc pages so far.")
+                print(f"==================================================\n")
 
             # Extract links to other doc pages under the same base path
-            soup = BeautifulSoup(html, 'html.parser')
             for link in soup.find_all('a', href=True):
                 full_link = urljoin(current_url, link['href'])
-                parsed_link = urlparse(full_link)
-                # Keep crawls within cycling74 docs site
-                if "docs.cycling74.com" in parsed_link.netloc and full_link not in self.visited_urls:
+                # Strip URL fragments to prevent duplicate crawling of different page sections
+                full_link = full_link.split('#')[0].split('?')[0]
+                
+                # Keep crawls within target paths and avoid duplicate queueing
+                if self.is_valid_url(full_link) and full_link not in self.visited_urls and full_link not in to_visit:
                     to_visit.append(full_link)
+
+        if dry_run:
+            print("\n" + "="*60)
+            print(f"[Dry Run Completed]")
+            print(f"Total Unique Valid Pages Discovered: {len(discovered_matches)}")
+            print("="*60 + "\n")
 
 
 class LocalMaxRefParser:
@@ -244,6 +304,7 @@ if __name__ == "__main__":
     parser.add_argument("--online", action="store_true", help="Run online BeautifulSoup crawler")
     parser.add_argument("--url", type=str, default="https://docs.cycling74.com/legacy/max8", help="Start URL for online crawl")
     parser.add_argument("--max-pages", type=int, default=50, help="Maximum pages to scrape online")
+    parser.add_argument("--dry-run", action="store_true", help="Count discoverable URLs matching the filter patterns without saving")
     
     parser.add_argument("--local", action="store_true", help="Parse local Max refpages XML directory")
     parser.add_argument("--path", type=str, help="Path to local Max refpages folder")
@@ -252,7 +313,7 @@ if __name__ == "__main__":
 
     if args.online:
         scraper = PoliteWebScraper(base_url=args.url)
-        scraper.crawl_docs(args.url, max_pages=args.max_pages)
+        scraper.crawl_docs(args.url, max_pages=args.max_pages, dry_run=args.dry_run)
     
     elif args.local:
         if not args.path:

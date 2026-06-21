@@ -8,11 +8,12 @@ import chromadb
 CHUNKS_FILE = "data/chunks.json"
 CHROMA_DB_PATH = "data/chroma"
 OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
+OLLAMA_BATCH_EMBED_URL = "http://localhost:11434/api/embed"
 EMBED_MODEL = "nomic-embed-text"
 
 
 def get_embedding(text, model=EMBED_MODEL):
-    """Call local Ollama endpoint to generate vector embedding."""
+    """Call local Ollama endpoint to generate vector embedding (fallback)."""
     try:
         response = requests.post(
             OLLAMA_EMBED_URL,
@@ -24,16 +25,31 @@ def get_embedding(text, model=EMBED_MODEL):
         else:
             print(f"[Ollama] Error: HTTP {response.status_code} - {response.text}")
             return None
-    except requests.exceptions.ConnectionError:
-        print("[Ollama] Connection Error: Is Ollama running on http://localhost:11434?")
-        return None
     except Exception as e:
         print(f"[Ollama] Error generating embedding: {e}")
         return None
 
 
-def ingest_chunks(collection_name="max8_docs", batch_size=20):
-    """Load chunks, embed them, and save to ChromaDB."""
+def get_embeddings_batch(texts, model=EMBED_MODEL):
+    """Call local Ollama batch embed endpoint to get vectors for a list of texts."""
+    try:
+        response = requests.post(
+            OLLAMA_BATCH_EMBED_URL,
+            json={"model": model, "input": texts},
+            timeout=45
+        )
+        if response.status_code == 200:
+            return response.json().get("embeddings")
+        else:
+            print(f"[Ollama] Batch Error: HTTP {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"[Ollama] Error generating batch embeddings: {e}")
+        return None
+
+
+def ingest_chunks(collection_name="max8_docs", batch_size=50):
+    """Load chunks, embed them using sequential batching via /api/embed, and save to ChromaDB."""
     if not os.path.exists(CHUNKS_FILE):
         print(f"[Ingest] Error: Chunks file not found at {CHUNKS_FILE}. Did you run chunk.py?")
         return
@@ -43,69 +59,72 @@ def ingest_chunks(collection_name="max8_docs", batch_size=20):
 
     print(f"[Ingest] Loaded {len(chunks)} chunks from {CHUNKS_FILE}")
 
+    # Divide chunks into batches
+    batches = []
+    for i in range(0, len(chunks), batch_size):
+        batches.append(chunks[i:i + batch_size])
+        
+    print(f"[Ingest] Created {len(batches)} batches of size {batch_size}")
+
     # Initialize ChromaDB
     print(f"[Ingest] Initializing ChromaDB persistent client at {CHROMA_DB_PATH}...")
     chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
     collection = chroma_client.get_or_create_collection(name=collection_name)
 
-    # Process in batches
-    ids = []
-    embeddings = []
-    metadatas = []
-    documents = []
-    
-    count = 0
     success_count = 0
-
-    print(f"[Ingest] Ingesting into collection '{collection_name}'...")
-    for chunk in chunks:
-        text = chunk["text"]
-        metadata = chunk["metadata"]
+    
+    # Process batches sequentially
+    print(f"[Ingest] Generating embeddings and ingesting into ChromaDB...")
+    for idx, batch_chunks in enumerate(batches):
+        texts = [c["text"] for c in batch_chunks]
         
-        # ChromaDB metadata values must be simple types (str, int, float, bool)
-        # Flatten dictionary or clean any complex types if necessary
-        clean_metadata = {}
-        for k, v in metadata.items():
-            if isinstance(v, (str, int, float, bool)):
-                clean_metadata[k] = v
-            else:
-                clean_metadata[k] = str(v)
+        # Try batch API
+        vectors = get_embeddings_batch(texts)
         
-        # Get embedding
-        vector = get_embedding(text)
-        if not vector:
-            print(f"[Ingest] Skipping chunk due to embedding failure.")
-            continue
+        # Fallback to sequential if batch fails
+        if not vectors:
+            print(f"[Ingest] Batch {idx + 1} failed, falling back to sequential embeddings...")
+            vectors = []
+            for text in texts:
+                vec = get_embedding(text)
+                vectors.append(vec)
+                
+        ids = []
+        embeddings = []
+        metadatas = []
+        documents = []
+        
+        for chunk, vector in zip(batch_chunks, vectors):
+            if not vector:
+                continue
             
-        ids.append(str(uuid.uuid4()))
-        embeddings.append(vector)
-        metadatas.append(clean_metadata)
-        documents.append(text)
-        
-        count += 1
-        success_count += 1
-
-        # Check if we should insert the batch
-        if len(ids) >= batch_size:
-            collection.add(
-                ids=ids,
-                embeddings=embeddings,
-                metadatas=metadatas,
-                documents=documents
-            )
-            print(f"[Ingest] Stored batch of {len(ids)} chunks ({success_count}/{len(chunks)})")
-            # Reset batch buffers
-            ids, embeddings, metadatas, documents = [], [], [], []
-
-    # Insert any remaining chunks
-    if ids:
-        collection.add(
-            ids=ids,
-            embeddings=embeddings,
-            metadatas=metadatas,
-            documents=documents
-        )
-        print(f"[Ingest] Stored final batch of {len(ids)} chunks ({success_count}/{len(chunks)})")
+            # Clean metadata
+            clean_metadata = {}
+            for k, v in chunk["metadata"].items():
+                if isinstance(v, (str, int, float, bool)):
+                    clean_metadata[k] = v
+                else:
+                    clean_metadata[k] = str(v)
+                    
+            ids.append(str(uuid.uuid4()))
+            embeddings.append(vector)
+            metadatas.append(clean_metadata)
+            documents.append(chunk["text"])
+            
+        if ids:
+            try:
+                collection.add(
+                    ids=ids,
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                    documents=documents
+                )
+                success_count += len(ids)
+                print(f"[Ingest] Stored batch {idx + 1}/{len(batches)} ({success_count}/{len(chunks)} chunks)")
+            except Exception as e:
+                print(f"[Ingest] Error adding batch {idx + 1} to ChromaDB: {e}")
+        else:
+            print(f"[Ingest] Batch {idx + 1} returned empty embeddings.")
 
     print(f"[Ingest] Ingestion completed. Successfully stored {success_count} chunks.")
 
@@ -113,7 +132,7 @@ def ingest_chunks(collection_name="max8_docs", batch_size=20):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Ingest documentation chunks into ChromaDB")
     parser.add_argument("--collection", type=str, default="max8_docs", help="ChromaDB collection name")
-    parser.add_argument("--batch-size", type=int, default=20, help="Batch size for embeddings insertion")
+    parser.add_argument("--batch-size", type=int, default=50, help="Batch size for embeddings insertion")
     args = parser.parse_args()
 
     ingest_chunks(collection_name=args.collection, batch_size=args.batch_size)

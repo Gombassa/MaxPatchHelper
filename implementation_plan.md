@@ -36,11 +36,39 @@ Implement a local, RAG-enabled AI assistant for Max MSP (v8 & v9) and Max for Li
 
 ### Q7: UI Framework
 - **Decision**: We will build the user interface using **React** instead of Streamlit in Phase 4.
-- **Approach**: The backend modules will be designed with clean API endpoints to allow seamless integration with a React frontend.
+- **Approach**: All assistant core modules (`retrieve.py`, `explain.py`, `generate.py`, `guided.py`) will be structured as importable Python functions rather than standalone CLI scripts. In Phase 4, we will implement a **FastAPI backend layer** (`server.py`) to expose these functions as REST and WebSocket API endpoints, serving as the bridge to the React frontend.
+
+### MCP Bridge (Model Context Protocol)
+- **Decision**: Deferred to Phase 5.
+- **Approach**: An MCP server bridge to expose this assistant to external agents is out of scope for v1. Revisit this in Phase 5 after the React UI is stable.
 
 ### Repo vs. Local Storage
 - **Decision**: Keep private and dynamically generated data out of Git.
 - **Approach**: The vector store (`data/chroma/`), raw scraped documentation (`data/raw/` and `data/chunks.json`), example templates (`data/example_patches/`), personal idioms (`data/personal_idioms.md`), the static LOM schema (`data/lom_reference.json`), and any private `.maxpat` files are strictly local and ignored via `.gitignore`. Only the scraper/ingestion scripts, retrieval CLI, and general configuration are stored in the repository.
+
+## Phase 1 Scaling & Scaffolding Refinements
+
+To scale Phase 1 from a 5-page proof-of-concept to the full Cycling '74 corpus:
+
+### 1. Crawl Scope & Page Count Estimation
+- **Target**: The full Max 8 object refpages, tutorials, vignettes, and M4L API documentation comprises approximately **600 to 800 pages** (excluding Jitter, which is out of scope).
+- **Refinement (Dry Run Verified)**: A dry run crawl verified exactly **842 unique valid pages** matching the filters, excluding Jitter. This will yield between **10,000 and 12,000 chunks** after tokenizer-aware splitting.
+
+### 2. URL Link Filtering
+- **Issue**: The current scraper follows *any* link matching `docs.cycling74.com`, which leads to infinite crawls of forum threads, search pages, or unrelated versions.
+- **Refinement**: We restrict the crawler to follow links matching the patterns:
+  - `docs.cycling74.com/legacy/max8/refpages/`
+  - `docs.cycling74.com/legacy/max8/tutorials/`
+  - `docs.cycling74.com/legacy/max8/vignettes/`
+  - `docs.cycling74.com/apiref/` (for Live API references)
+  - With explicit exclusion rules rejecting files starting with `jit.` or paths containing `jitter`.
+
+### 3. Batching & Ingest Optimization (Ollama scale-up)
+- **Issue**: Processing 10,000 chunks sequentially at 2.3 seconds per chunk would take **~6.4 hours**.
+- **Refinement**:
+  - Update `scraper/ingest.py` to use Ollama's batch endpoint `/api/embed` (passing a list of inputs in a single HTTP request instead of individual `/api/embeddings` requests).
+  - Process batches sequentially (without multithreading) to avoid thread context-overhead on a single-GPU setup where Ollama processes requests serially anyway. This avoids downstream technical debt while capturing the full HTTP round-trip batch win.
+  - This reduces estimated ingest time from ~5 hours to **10–15 minutes**.
 
 ---
 
@@ -72,6 +100,9 @@ LLM pre-prompt classifier for query intent.
 
 #### [NEW] [validate.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/validate.py)
 Custom `.maxpat` JSON validator.
+
+#### [NEW] [server.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/server.py)
+FastAPI backend server exposing REST and WebSocket endpoints (like `/explain`, `/generate`, `/guided`) for the React frontend.
 
 ---
 

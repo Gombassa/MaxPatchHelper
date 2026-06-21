@@ -47,19 +47,56 @@ def query_vector_db(query_text, collection_name="max8_docs", domain=None, max_ve
         print("[Retrieve] Error: Failed to generate query embedding.")
         return []
 
-    # Build metadata filter
-    where_filter = {}
+    # 1. Try exact title matching for specific object reference pages
+    candidates = []
+    for w in query_text.split():
+        w_clean = w.strip("?,.:;()\"'")
+        # Check for MSP (~), M4L (live.), or common Max objects
+        if w_clean.endswith("~") or w_clean.startswith("live.") or w_clean in ["metro", "delay", "poly", "buffer", "coll", "dict", "gate", "route", "phasor", "dac", "adc", "cycle"]:
+            candidates.append(w_clean)
+
+    for candidate in candidates:
+        for c in [candidate, candidate.lower()]:
+            title_name = f"{c} Reference"
+            title_filters = [{"title": title_name}]
+            if max_version:
+                title_filters.append({"max_version": max_version})
+            if domain:
+                title_filters.append({"domain": domain})
+                
+            title_where = title_filters[0] if len(title_filters) == 1 else {"$and": title_filters}
+            
+            try:
+                results = collection.query(
+                    query_embeddings=[query_vector],
+                    n_results=n_results,
+                    where=title_where
+                )
+                if results and results.get("documents") and results["documents"][0]:
+                    print(f"[Retrieve] Found exact match for object reference page: '{title_name}'")
+                    return results
+            except Exception:
+                pass
+
+    # 2. General metadata filter fallback
+    filters = []
     if max_version:
-        where_filter["max_version"] = max_version
+        filters.append({"max_version": max_version})
     if domain:
-        where_filter["domain"] = domain
+        filters.append({"domain": domain})
+
+    where_filter = None
+    if len(filters) == 1:
+        where_filter = filters[0]
+    elif len(filters) > 1:
+        where_filter = {"$and": filters}
 
     # Query ChromaDB
     try:
         results = collection.query(
             query_embeddings=[query_vector],
             n_results=n_results,
-            where=where_filter if where_filter else None
+            where=where_filter
         )
         return results
     except Exception as e:
