@@ -40,7 +40,7 @@ Implement a local, RAG-enabled AI assistant for Max MSP (v8 & v9) and Max for Li
 
 ### Repo vs. Local Storage
 - **Decision**: Keep private and dynamically generated data out of Git.
-- **Approach**: The vector store (`data/chroma/`), raw scraped documentation (`data/raw/` and `data/chunks.json`), example templates (`data/example_patches/`), personal idioms (`data/personal_idioms.md`), and any private `.maxpat` files are strictly local and ignored via `.gitignore`. Only the scraper/ingestion scripts, retrieval CLI, static LOM schema (`data/lom_reference.json`), and general configuration are stored in the repository.
+- **Approach**: The vector store (`data/chroma/`), raw scraped documentation (`data/raw/` and `data/chunks.json`), example templates (`data/example_patches/`), personal idioms (`data/personal_idioms.md`), the static LOM schema (`data/lom_reference.json`), and any private `.maxpat` files are strictly local and ignored via `.gitignore`. Only the scraper/ingestion scripts, retrieval CLI, and general configuration are stored in the repository.
 
 ---
 
