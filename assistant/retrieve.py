@@ -3,10 +3,7 @@ import json
 import argparse
 import requests
 import chromadb
-
-CHROMA_DB_PATH = "data/chroma"
-OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
-EMBED_MODEL = "nomic-embed-text"
+from config import CHROMA_DB_PATH, OLLAMA_EMBED_URL, EMBED_MODEL
 
 
 def get_embedding(text, model=EMBED_MODEL):
@@ -69,7 +66,7 @@ def query_vector_db(query_text, collection_name="max8_docs", domain=None, max_ve
             try:
                 results = collection.query(
                     query_embeddings=[query_vector],
-                    n_results=n_results,
+                    n_results=max(6, n_results),
                     where=title_where
                 )
                 if results and results.get("documents") and results["documents"][0]:

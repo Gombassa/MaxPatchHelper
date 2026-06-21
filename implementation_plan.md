@@ -2,6 +2,30 @@
 
 Implement a local, RAG-enabled AI assistant for Max MSP (v8 & v9) and Max for Live (M4L) with guided build, explanation, and patch generation capabilities.
 
+## Progress Summary
+
+### Phase 1 — Complete
+- **Scrape & Chunk**: Scraped 842 unique valid pages of documentation and reference tables, chunking them to 21,498 chunks using `tiktoken`.
+- **Embed & Ingest**: Generated vector embeddings via `nomic-embed-text` and ingested chunks into local ChromaDB `max8_docs` collection.
+- **Performance Note**: Ingestion took ~3 hours due to unbatched embedding calls. We must fix batching before re-ingesting for Max 9.
+- **Verification**: Verified that exact-match `cycle~` retrieval and general M4L tempo/LOM retrieval both return correct results.
+
+### Phase 2 — Complete
+- **Intent Classifier**: LLM pre-prompt classifier (`mistral:latest`, zero temperature, 1-token output) routes user queries to `EXPLAIN`, `GENERATE`, or `GUIDED` modes.
+- **Streaming & API**: Real-time token streaming to stdout enabled via `stream=True` and a callback parameter ready for FastAPI Server-Sent Events (SSE).
+- **Retrieval Window**: Configured `n_results=3` for general queries and forced `n_results=6` for exact-match object reference pages.
+- **Structured Index**: Compiled `inlet_outlet_index.json` containing 20 core objects (including `cycle~` and `live.path`).
+- **Second-Pass Index Injection**: After ChromaDB retrieval, the query and chunk texts are scanned for known object names, and matching index entries are injected automatically. This fixes cases where the user does not name the object explicitly.
+- **Context Size**: Set `num_ctx: 8192` in Ollama options and moved it to `config.py` as a configurable per-mode value (`explain` = 8192, `generate` = 16384).
+- **Chat API Segregation**: Refactored LLM connection to use Ollama's native `/api/chat` instead of `/api/generate`, segregating system rules and document contexts into separate roles.
+
+### Known Gaps to Address Before Phase 3
+1. **Index Coverage**: `inlet_outlet_index.json` currently only covers 20 core objects. Build a parser to auto-populate from `data/raw/` scraped pages.
+2. **Missing M4L UI Objects**: Key M4L UI objects (e.g., `live.dial`, `live.slider`, `live.numbox`, `live.button`, `live.thisdevice`, `live.banks`, `live.remote~`) are not yet fully populated in the index.
+3. **Data Git-Ignoring**: Ensure `data/inlet_outlet_index.json` and any generated data files are git-ignored, keeping only generator scripts in the repository.
+
+---
+
 ## User Decisions & Alignments
 
 ### Q1: VRAM Contention with SoundAgent
@@ -88,6 +112,9 @@ Tokenizer and chunker using `tiktoken`.
 Embeds and loads chunks into ChromaDB collections.
 
 ### assistant
+
+#### [NEW] [config.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/config.py)
+Centralizes assistant configuration parameters (models, endpoints, URLs, and context window sizes per mode).
 
 #### [NEW] [assistant.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant.py)
 Core CLI entry point routing mode flags (`--mode`, `--version`, `--domain`).

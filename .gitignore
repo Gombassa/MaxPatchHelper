@@ -7,6 +7,7 @@ data/chunks.json
 data/example_patches/
 data/personal_idioms.md
 data/lom_reference.json
+data/inlet_outlet_index.json
 *.maxpat
 
 
