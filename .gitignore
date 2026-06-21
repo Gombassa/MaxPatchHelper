@@ -1,0 +1,24 @@
+# Vector Store & Cache
+data/chroma/
+data/raw/
+data/chunks.json
+
+# Example Patches & Personal Idioms (Keep Local)
+data/example_patches/
+data/personal_idioms.md
+*.maxpat
+
+# Python Environment & Cache
+.venv/
+env/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
