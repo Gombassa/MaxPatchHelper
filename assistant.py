@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "ass
 from retrieve import query_vector_db, format_results
 from classify import classify_intent
 from explain import explain_query
+from generate import generate_patch
+from guided import run_guided_build_session
 
 def main():
     parser = argparse.ArgumentParser(description="Max MSP AI Assistant CLI")
@@ -56,9 +58,39 @@ def main():
             print(explanation)
         print("-----------------------------\n")
     elif mode == "generate":
-        print("GENERATE mode is planned for Phase 3.")
+        print(f"\n--- GENERATE MODE ---")
+        print(f"Generating patch for: '{args.query}'")
+        result = generate_patch(
+            query_text=args.query,
+            domain=args.domain,
+            version=args.version,
+            stream_to_stdout=True
+        )
+        if result["valid"]:
+            print(f"\n[Assistant] Success! Valid patch generated in {result['attempts']} attempts.")
+            default_save_path = "data/generated_patch.maxpat"
+            print(f"To save the patch, specify a file path or press Enter to save to '{default_save_path}'.")
+            try:
+                save_path = input("Save path: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                save_path = ""
+            if not save_path:
+                save_path = default_save_path
+            
+            try:
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json
+                    json.dump(result["patch"], f, indent=4)
+                print(f"[Assistant] Saved patch to {save_path}")
+            except Exception as e:
+                print(f"[Assistant] Error saving patch file: {e}")
+        else:
+            print("\n[Assistant] Patch generation failed. Errors:")
+            for err in result["errors"]:
+                print(f" - {err}")
     elif mode == "guided":
-        print("GUIDED mode is planned for Phase 3.")
+        run_guided_build_session()
 
 if __name__ == "__main__":
     main()

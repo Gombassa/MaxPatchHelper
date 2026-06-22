@@ -1,0 +1,153 @@
+import sys
+import os
+import json
+import pytest
+
+# Add assistant directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assistant"))
+from validate import validate_patch
+
+def load_example(relative_path):
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    full_path = os.path.join(base_dir, relative_path)
+    with open(full_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def test_validate_sine_generator():
+    """Verify that the standard valid sine wave generator patch passes validation."""
+    patch_data = load_example("data/example_patches/max/sine_generator.json")
+    result = validate_patch(patch_data)
+    assert result["valid"] is True
+    assert len(result["errors"]) == 0
+    assert result["domain"] == "msp"
+
+def test_validate_audio_effect_volume():
+    """Verify that the standard valid M4L volume patch passes validation."""
+    patch_data = load_example("data/example_patches/m4l/audio_effect_volume.json")
+    result = validate_patch(patch_data)
+    assert result["valid"] is True
+    assert len(result["errors"]) == 0
+    assert result["domain"] == "m4l"
+    assert result["device_type"] == "audio_effect"
+
+def test_validate_duplicate_ids():
+    """Verify that duplicate box IDs are caught as errors."""
+    patch_data = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "toggle"}},
+                {"box": {"id": "obj-1", "maxclass": "number"}}
+            ]
+        }
+    }
+    result = validate_patch(patch_data)
+    assert result["valid"] is False
+    assert any("Duplicate box ID" in err for err in result["errors"])
+
+def test_validate_invalid_line_references():
+    """Verify that lines referencing non-existent box IDs are caught as errors."""
+    patch_data = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "toggle"}},
+                {"box": {"id": "obj-2", "maxclass": "number"}}
+            ],
+            "lines": [
+                {"patchline": {"source": ["obj-1", 0], "destination": ["obj-99", 0]}}
+            ]
+        }
+    }
+    result = validate_patch(patch_data)
+    assert result["valid"] is False
+    assert any("references non-existent destination box ID: 'obj-99'" in err for err in result["errors"])
+
+def test_validate_m4l_missing_plugin_plugout():
+    """Verify that M4L Audio Effect fails if it has UI/live elements but lacks plugin~/plugout~."""
+    patch_data = {
+        "domain": "m4l",
+        "patch": {
+            "patcher": {
+                "fileversion": 1,
+                "boxes": [
+                    {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "Dial1"}}}}
+                ]
+            }
+        }
+    }
+    result = validate_patch(patch_data)
+    # The domain is 'm4l', but it has no plugin~ and no plugout~.
+    # It will infer device_type as 'unknown', but if we explicitly test it:
+    assert result["device_type"] == "unknown"
+
+def test_validate_m4l_ui_param_constraints():
+    """Verify M4L UI dial rules: requires parameter_enable=1, unique varname, unique parameter_longname."""
+    # Test duplicate longname
+    patch_data = {
+        "domain": "m4l",
+        "patch": {
+            "patcher": {
+                "fileversion": 1,
+                "boxes": [
+                    {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "SharedName"}}}},
+                    {"box": {"id": "obj-2", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_2", "saved_attribute_attributes": {"valueof": {"parameter_longname": "SharedName"}}}}
+                ]
+            }
+        }
+    }
+    result = validate_patch(patch_data)
+    assert result["valid"] is False
+    assert any("duplicate parameter_longname: 'SharedName'" in err for err in result["errors"])
+
+    # Test missing parameter_enable=1
+    patch_data_2 = {
+        "domain": "m4l",
+        "patch": {
+            "patcher": {
+                "fileversion": 1,
+                "boxes": [
+                    {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 0, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "Dial1"}}}}
+                ]
+            }
+        }
+    }
+    result_2 = validate_patch(patch_data_2)
+    assert result_2["valid"] is False
+    assert any("must have 'parameter_enable' set to 1" in err for err in result_2["errors"])
+
+def test_validate_bounds_checking():
+    """Verify that out-of-bounds inlet/outlet index connections are flagged as errors."""
+    patch_data = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "newobj", "text": "cycle~", "numinlets": 2, "numoutlets": 1}},
+                {"box": {"id": "obj-2", "maxclass": "newobj", "text": "dac~", "numinlets": 2, "numoutlets": 0}}
+            ],
+            "lines": [
+                {"patchline": {"source": ["obj-1", 1], "destination": ["obj-2", 0]}} # obj-1 has only 1 outlet (valid indices: 0). Index 1 is out of bounds!
+            ]
+        }
+    }
+    result = validate_patch(patch_data)
+    assert result["valid"] is False
+    assert any("references out-of-bounds outlet 1 of box 'obj-1'" in err for err in result["errors"])
+
+    # Test out of bounds inlet
+    patch_data_inlet = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "newobj", "text": "cycle~", "numinlets": 2, "numoutlets": 1}},
+                {"box": {"id": "obj-2", "maxclass": "newobj", "text": "dac~", "numinlets": 2, "numoutlets": 0}}
+            ],
+            "lines": [
+                {"patchline": {"source": ["obj-1", 0], "destination": ["obj-2", 2]}} # obj-2 has only 2 inlets (valid: 0, 1). Index 2 is out of bounds!
+            ]
+        }
+    }
+    result_inlet = validate_patch(patch_data_inlet)
+    assert result_inlet["valid"] is False
+    assert any("references out-of-bounds inlet 2 of box 'obj-2'" in err for err in result_inlet["errors"])
+

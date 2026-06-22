@@ -19,10 +19,10 @@ Implement a local, RAG-enabled AI assistant for Max MSP (v8 & v9) and Max for Li
 - **Context Size**: Set `num_ctx: 8192` in Ollama options and moved it to `config.py` as a configurable per-mode value (`explain` = 8192, `generate` = 16384).
 - **Chat API Segregation**: Refactored LLM connection to use Ollama's native `/api/chat` instead of `/api/generate`, segregating system rules and document contexts into separate roles.
 
-### Known Gaps to Address Before Phase 3
-1. **Index Coverage**: `inlet_outlet_index.json` currently only covers 20 core objects. Build a parser to auto-populate from `data/raw/` scraped pages.
-2. **Missing M4L UI Objects**: Key M4L UI objects (e.g., `live.dial`, `live.slider`, `live.numbox`, `live.button`, `live.thisdevice`, `live.banks`, `live.remote~`) are not yet fully populated in the index.
-3. **Data Git-Ignoring**: Ensure `data/inlet_outlet_index.json` and any generated data files are git-ignored, keeping only generator scripts in the repository.
+### Known Gaps Addressed
+1. **Index Coverage**: Auto-populated `inlet_outlet_index.json` from `data/raw/` reference JSON pages using `scraper/parse_inlets_outlets.py`.
+2. **M4L UI Objects**: Added the full set of M4L UI objects to the index (87 objects total).
+3. **Data Git-Ignoring**: Verified `inlet_outlet_index.json` and generated files are git-ignored.
 
 ---
 
@@ -126,7 +126,13 @@ Handles ChromaDB collection queries with metadata filtering.
 LLM pre-prompt classifier for query intent.
 
 #### [NEW] [validate.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/validate.py)
-Custom `.maxpat` JSON validator.
+Custom `.maxpat` JSON validator. Uses Pydantic models to verify JSON structure, unique box IDs, valid line source/destination mappings, and domain-specific constraints (e.g. M4L UI parameters unique names, `plugin~`/`plugout~` presence for audio effects).
+
+#### [NEW] [generate.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/generate.py)
+Generates valid `.maxpat` patches using `qwen2.5-coder:14b` with a 16K context window (`GENERATE_CONTEXT_WINDOW`). Features a validation retry loop that feeds validation errors back to the model for automatic self-correction.
+
+#### [NEW] [guided.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/guided.py)
+Interactive REPL walkthrough for building patches step-by-step. Manages multi-turn design state, explicitly confirms M4L constraints before generation, and creates end-of-session summaries to update the personal idioms layer.
 
 #### [NEW] [server.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/server.py)
 FastAPI backend server exposing REST and WebSocket endpoints (like `/explain`, `/generate`, `/guided`) for the React frontend.
@@ -136,9 +142,14 @@ FastAPI backend server exposing REST and WebSocket endpoints (like `/explain`, `
 ## Verification Plan
 
 ### Automated Tests
-- Run `pytest` on individual components (scraper, chunker, classifier, validator).
-- Validation tests on 10 sample `.maxpat` files to ensure syntax checks work.
+- Create `tests/test_validate.py` containing unit tests to verify:
+  - Detection of invalid JSON structures.
+  - Identification of dangling lines or duplicate box IDs.
+  - M4L-specific rules (verifying `audio_effect` fails if `plugin~` or `plugout~` is missing).
+- Run validation checks on standard sample patches in `data/example_patches/`.
 
 ### Manual Verification
-- Verify retrieval query accuracy for Max/MSP objects and Live API components.
-- Inspect generated `.maxpat` outputs in Max 8.
+- Generate an MSP patch: `python assistant.py --mode generate "a basic sine wave generator with gain control"`.
+- Generate an M4L patch: `python assistant.py --mode generate "a stereo volume control dial for Max for Live"`.
+- Verify the generated JSON loads without error in Cycling '74 Max 8/9.
+- Run interactive guided build REPL: `python assistant.py --mode guided`. Verify that it steps through goal definition, object selection, line routing, and outputs valid JSON at the end.

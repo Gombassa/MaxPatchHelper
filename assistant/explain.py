@@ -1,6 +1,8 @@
 import os
+import sys
 import json
 import requests
+import re
 from retrieve import query_vector_db
 from config import OLLAMA_CHAT_URL, EXPLAIN_MODEL, LOM_REF_PATH, INDEX_PATH, EXPLAIN_CONTEXT_WINDOW
 
@@ -36,8 +38,8 @@ CRITICAL: If a "STRUCTURED INLET/OUTLET INDEX" is provided above for the object(
 
 EXPLANATION:"""
 
-def load_inlet_outlet_index(query_text):
-    """Scan query for potential object names and load matching inlet/outlet index data."""
+def load_inlet_outlet_index(query_text, additional_text=""):
+    """Scan query and additional text (e.g. retrieved chunks) for potential object names and load matching inlet/outlet index data."""
     if not os.path.exists(INDEX_PATH):
         return ""
         
@@ -53,6 +55,13 @@ def load_inlet_outlet_index(query_text):
             elif w_clean.lower() in index_data:
                 candidates.append(w_clean.lower())
                 
+        if additional_text:
+            for obj_name in index_data.keys():
+                # Avoid short matches unless it's a distinct word
+                pattern = r'(?<!\w)' + re.escape(obj_name) + r'(?!\w)'
+                if re.search(pattern, additional_text):
+                    candidates.append(obj_name)
+                    
         if not candidates:
             return ""
             
@@ -78,7 +87,7 @@ def detect_m4l_context(query_text, domain=None):
     if domain == "m4l":
         return True
     
-    m4l_keywords = ["live.", "m4l", "lom", "live api", "tempo", "track", "clip", "device", "observer", "remote~"]
+    m4l_keywords = ["live.", "m4l", "lom", "live api", "tempo", "track", "clip", "device", "observer", "remote~", "max for live", "live device"]
     query_lower = query_text.lower()
     return any(keyword in query_lower for keyword in m4l_keywords)
 
@@ -156,7 +165,7 @@ def explain_query(query_text, domain=None, version="8", model=EXPLAIN_MODEL, res
     context_text = "\n".join(context_blocks) if context_blocks else "No relevant documentation found."
     
     # Load structured index if relevant
-    structured_index_text = load_inlet_outlet_index(query_text)
+    structured_index_text = load_inlet_outlet_index(query_text, context_text)
     
     # Load LOM schema if relevant
     lom_schema_text = ""
@@ -193,7 +202,6 @@ def explain_query(query_text, domain=None, version="8", model=EXPLAIN_MODEL, res
             timeout=300
         )
         if response.status_code == 200:
-            import sys
             full_text = ""
             for line in response.iter_lines():
                 if line:
