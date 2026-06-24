@@ -1,0 +1,93 @@
+/* Design Tokens (HSL Dark System) for Max MSP AI Assistant UI */
+
+:root {
+  /* Colors - Backgrounds & Surfaces */
+  --bg-primary: #0d0f12;          /* Deep slate charcoal background */
+  --bg-surface: #14171c;          /* Base glass card surface */
+  --bg-surface-elevated: #1e222b; /* Elevated card/hover surface */
+  --bg-sidebar: #0f1115;          /* Sidebar/secondary panel background */
+  --bg-tooltip: #000000;
+
+  /* Colors - Borders */
+  --border-color: #21262d;        /* Subtle dark gray border */
+  --border-hover: #30363d;        /* Hover border highlight */
+  --border-focus: #6366f1;        /* Electric indigo border focus */
+
+  /* Colors - Text */
+  --text-primary: #f3f4f6;        /* High-contrast off-white */
+  --text-secondary: #8b949e;      /* Medium gray description/subtext */
+  --text-muted: #525866;          /* Muted disabled/placeholder text */
+  --text-link: #818cf8;           /* Indigo link text */
+
+  /* Colors - Accents & States */
+  --accent-primary: #6366f1;      /* Electric purple/indigo */
+  --accent-primary-hover: #4f46e5;/* Darker electric purple */
+  --accent-glow: rgba(99, 102, 241, 0.15); /* Purple shadow glow */
+  
+  --accent-success: #10b981;      /* Emerald green for successful validation */
+  --accent-success-glow: rgba(16, 185, 129, 0.1);
+  
+  --accent-error: #ef4444;        /* Bright red for validation errors */
+  --accent-error-glow: rgba(239, 68, 68, 0.1);
+  
+  --accent-warning: #f59e0b;      /* Amber yellow for validation warnings */
+  --accent-warning-glow: rgba(245, 158, 11, 0.1);
+
+  /* Typography - Font Families */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-mono: 'Fira Code', 'Courier New', Courier, monospace;
+
+  /* Typography - Font Sizes */
+  --text-xs: 0.75rem;     /* 12px */
+  --text-sm: 0.875rem;    /* 14px */
+  --text-base: 1rem;      /* 16px */
+  --text-lg: 1.125rem;    /* 18px */
+  --text-xl: 1.25rem;     /* 20px */
+  --text-2xl: 1.5rem;     /* 24px */
+  --text-3xl: 1.875rem;   /* 30px */
+  --text-4xl: 2.25rem;    /* 36px */
+
+  /* Typography - Font Weights */
+  --weight-light: 300;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Typography - Line Heights */
+  --lh-tight: 1.25;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.625;
+
+  /* Spacing Scale */
+  --spacing-xxs: 0.125rem; /* 2px */
+  --spacing-xs: 0.25rem;   /* 4px */
+  --spacing-sm: 0.5rem;    /* 8px */
+  --spacing-md: 1rem;      /* 16px */
+  --spacing-lg: 1.5rem;    /* 24px */
+  --spacing-xl: 2rem;      /* 32px */
+  --spacing-2xl: 3rem;     /* 48px */
+  --spacing-3xl: 4rem;     /* 64px */
+
+  /* Border Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* Shadows & Glassmorphic Effects */
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px 0 rgba(99, 102, 241, 0.15);
+  --shadow-success-glow: 0 0 20px 0 rgba(16, 185, 129, 0.15);
+  
+  --backdrop-blur: blur(12px);
+  --glass-bg: rgba(20, 23, 28, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.05);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+}

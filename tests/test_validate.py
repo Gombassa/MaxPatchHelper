@@ -16,7 +16,9 @@ def load_example(relative_path):
 def test_validate_sine_generator():
     """Verify that the standard valid sine wave generator patch passes validation."""
     patch_data = load_example("data/example_patches/max/sine_generator.json")
-    result = validate_patch(patch_data)
+    if "patch" in patch_data:
+        patch_data = patch_data["patch"]
+    result = validate_patch(patch_data, domain_override="msp")
     assert result["valid"] is True
     assert len(result["errors"]) == 0
     assert result["domain"] == "msp"
@@ -24,7 +26,9 @@ def test_validate_sine_generator():
 def test_validate_audio_effect_volume():
     """Verify that the standard valid M4L volume patch passes validation."""
     patch_data = load_example("data/example_patches/m4l/audio_effect_volume.json")
-    result = validate_patch(patch_data)
+    if "patch" in patch_data:
+        patch_data = patch_data["patch"]
+    result = validate_patch(patch_data, domain_override="m4l")
     assert result["valid"] is True
     assert len(result["errors"]) == 0
     assert result["domain"] == "m4l"
@@ -66,17 +70,14 @@ def test_validate_invalid_line_references():
 def test_validate_m4l_missing_plugin_plugout():
     """Verify that M4L Audio Effect fails if it has UI/live elements but lacks plugin~/plugout~."""
     patch_data = {
-        "domain": "m4l",
-        "patch": {
-            "patcher": {
-                "fileversion": 1,
-                "boxes": [
-                    {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "Dial1"}}}}
-                ]
-            }
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "Dial1"}}}}
+            ]
         }
     }
-    result = validate_patch(patch_data)
+    result = validate_patch(patch_data, domain_override="m4l")
     # The domain is 'm4l', but it has no plugin~ and no plugout~.
     # It will infer device_type as 'unknown', but if we explicitly test it:
     assert result["device_type"] == "unknown"
@@ -85,34 +86,28 @@ def test_validate_m4l_ui_param_constraints():
     """Verify M4L UI dial rules: requires parameter_enable=1, unique varname, unique parameter_longname."""
     # Test duplicate longname
     patch_data = {
-        "domain": "m4l",
-        "patch": {
-            "patcher": {
-                "fileversion": 1,
-                "boxes": [
-                    {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "SharedName"}}}},
-                    {"box": {"id": "obj-2", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_2", "saved_attribute_attributes": {"valueof": {"parameter_longname": "SharedName"}}}}
-                ]
-            }
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "SharedName"}}}},
+                {"box": {"id": "obj-2", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_2", "saved_attribute_attributes": {"valueof": {"parameter_longname": "SharedName"}}}}
+            ]
         }
     }
-    result = validate_patch(patch_data)
+    result = validate_patch(patch_data, domain_override="m4l")
     assert result["valid"] is False
     assert any("duplicate parameter_longname: 'SharedName'" in err for err in result["errors"])
 
     # Test missing parameter_enable=1
     patch_data_2 = {
-        "domain": "m4l",
-        "patch": {
-            "patcher": {
-                "fileversion": 1,
-                "boxes": [
-                    {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 0, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "Dial1"}}}}
-                ]
-            }
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "live.dial", "parameter_enable": 0, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "Dial1"}}}}
+            ]
         }
     }
-    result_2 = validate_patch(patch_data_2)
+    result_2 = validate_patch(patch_data_2, domain_override="m4l")
     assert result_2["valid"] is False
     assert any("must have 'parameter_enable' set to 1" in err for err in result_2["errors"])
 
@@ -150,4 +145,35 @@ def test_validate_bounds_checking():
     result_inlet = validate_patch(patch_data_inlet)
     assert result_inlet["valid"] is False
     assert any("references out-of-bounds inlet 2 of box 'obj-2'" in err for err in result_inlet["errors"])
+
+
+def test_validate_invalid_live_objects():
+    """Verify that invalid live.* objects (hallucinations like live.control) are flagged as errors."""
+    # Test newobj with text live.control
+    patch_data_control = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "newobj", "text": "live.control @parameter_enable 1"}},
+                {"box": {"id": "obj-2", "maxclass": "live.dial", "parameter_enable": 1, "varname": "dial_1", "saved_attribute_attributes": {"valueof": {"parameter_longname": "Dial1"}}}}
+            ]
+        }
+    }
+    result_control = validate_patch(patch_data_control, domain_override="m4l")
+    assert result_control["valid"] is False
+    assert any("Invalid object class 'live.control' in box 'obj-1'" in err for err in result_control["errors"])
+
+    # Test direct maxclass live.control
+    patch_data_direct = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "live.control"}}
+            ]
+        }
+    }
+    result_direct = validate_patch(patch_data_direct, domain_override="m4l")
+    assert result_direct["valid"] is False
+    assert any("Invalid object class 'live.control' in box 'obj-1'" in err for err in result_direct["errors"])
+
 

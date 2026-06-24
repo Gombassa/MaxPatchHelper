@@ -18,9 +18,9 @@ TRUSTED_PORT_COUNTS = {
     "live.arrows": (1, 2),
     "live.thisdevice": (0, 2),
     "live.path": (1, 2),
-    "live.observer": (1, 2),
-    "live.object": (1, 2),
-    "live.remote~": (1, 1),
+    "live.observer": (2, 2),
+    "live.object": (2, 2),
+    "live.remote~": (2, 1),
     "plugin~": (0, 2),
     "plugout~": (2, 0),
     "dac~": (2, 0),
@@ -32,6 +32,32 @@ TRUSTED_PORT_COUNTS = {
     "toggle": (1, 1),
     "button": (1, 1),
     "metro": (2, 1),
+}
+
+VALID_LIVE_OBJECTS = {
+    "live.dial",
+    "live.slider",
+    "live.numbox",
+    "live.button",
+    "live.toggle",
+    "live.text",
+    "live.menu",
+    "live.tab",
+    "live.arrows",
+    "live.gain~",
+    "live.meter~",
+    "live.step",
+    "live.grid",
+    "live.line",
+    "live.drop",
+    "live.banks",
+    "live.comment",
+    "live.thisdevice",
+    "live.path",
+    "live.observer",
+    "live.object",
+    "live.remote~",
+    "live.param~"
 }
 
 def get_true_ports(maxclass: str, text: Optional[str] = None) -> tuple:
@@ -122,25 +148,18 @@ def validate_patch(
     else:
         raw_data = patch_data
 
-    # 2. Extract wrapped patch if present
-    wrapped_domain = None
-    if isinstance(raw_data, dict) and "patch" in raw_data and isinstance(raw_data["patch"], dict):
-        wrapped_domain = raw_data.get("domain")
-        patch_json = raw_data["patch"]
-    else:
-        patch_json = raw_data
-
-    domain = domain_override or wrapped_domain or "max"
-    
-    # 3. Check for patcher root key
-    if not isinstance(patch_json, dict) or "patcher" not in patch_json:
+    # 2. Check for patcher root key directly on raw_data
+    if not isinstance(raw_data, dict) or "patcher" not in raw_data:
         return {
             "valid": False,
-            "errors": ["Root object must contain a 'patcher' key."],
+            "errors": ["Root object must contain a 'patcher' key. Wrapper keys like 'description', 'domain', or 'patch' are not allowed at the top level."],
             "warnings": [],
-            "domain": domain,
+            "domain": domain_override or "max",
             "device_type": "unknown"
         }
+    
+    patch_json = raw_data
+    domain = domain_override or "max"
 
     # 4. Validate structure using Pydantic
     try:
@@ -180,6 +199,14 @@ def validate_patch(
             parts = b.text.strip().split()
             if parts:
                 name = parts[0]
+        # Check for invalid live.* objects (hallucinations)
+        if name.startswith("live.") and name not in VALID_LIVE_OBJECTS:
+            errors.append(
+                f"Invalid object class '{name}' in box '{b.id}'. There is no such object as '{name}' in Max. "
+                f"Valid live.* objects are: {', '.join(sorted(VALID_LIVE_OBJECTS))}. "
+                f"If you wanted to reference the M4L device, use 'live.thisdevice' or path 'live_set this_device'. "
+                f"For LOM controls, use 'live.path', 'live.observer', or 'live.object'."
+            )
         if name in TRUSTED_PORT_COUNTS:
             true_inlets, true_outlets = TRUSTED_PORT_COUNTS[name]
             if b.numinlets is not None and b.numinlets != true_inlets:
@@ -204,7 +231,14 @@ def validate_patch(
             num_outlets = true_outlets if true_outlets is not None else src_box.numoutlets
             if num_outlets is not None and isinstance(src_outlet, int):
                 if src_outlet < 0 or src_outlet >= num_outlets:
-                    errors.append(f"Line #{idx} references out-of-bounds outlet {src_outlet} of box '{src_id}' (numoutlets: {num_outlets})")
+                    src_name = src_box.maxclass
+                    if src_box.maxclass == "newobj" and src_box.text:
+                        src_name = src_box.text.strip().split()[0]
+                    valid_range = f"0 to {num_outlets - 1}" if num_outlets > 0 else "none (0 outlets)"
+                    errors.append(
+                        f"Line #{idx} references out-of-bounds outlet {src_outlet} of box '{src_id}' "
+                        f"({src_name}) which has only {num_outlets} outlets (valid indices: {valid_range})."
+                    )
             
         # Validate destination
         if not line.destination or len(line.destination) < 2:
@@ -221,7 +255,14 @@ def validate_patch(
             num_inlets = true_inlets if true_inlets is not None else dest_box.numinlets
             if num_inlets is not None and isinstance(dest_inlet, int):
                 if dest_inlet < 0 or dest_inlet >= num_inlets:
-                    errors.append(f"Line #{idx} references out-of-bounds inlet {dest_inlet} of box '{dest_id}' (numinlets: {num_inlets})")
+                    dest_name = dest_box.maxclass
+                    if dest_box.maxclass == "newobj" and dest_box.text:
+                        dest_name = dest_box.text.strip().split()[0]
+                    valid_range = f"0 to {num_inlets - 1}" if num_inlets > 0 else "none (0 inlets)"
+                    errors.append(
+                        f"Line #{idx} references out-of-bounds inlet {dest_inlet} of box '{dest_id}' "
+                        f"({dest_name}) which has only {num_inlets} inlets (valid indices: {valid_range})."
+                    )
 
     # 7b. Check for dac~ inlet conflicts (control rate + signal rate sharing the same inlet)
     for b in boxes:
@@ -293,8 +334,8 @@ def validate_patch(
         # Check presence of M4L anchors
         has_plugin = has_object("plugin~")
         has_plugout = has_object("plugout~")
-        has_midiin = has_object(["midiin", "notein"])
-        has_midiout = has_object(["midiout", "noteout"])
+        has_midiin = has_object(["midiin", "notein", "ctlin"])
+        has_midiout = has_object(["midiout", "noteout", "ctlout"])
         has_thisdevice = has_object("live.thisdevice")
         
         if not has_thisdevice:

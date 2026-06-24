@@ -3,6 +3,7 @@ import sys
 import json
 import requests
 import re
+import threading
 from retrieve import query_vector_db
 from config import OLLAMA_CHAT_URL, EXPLAIN_MODEL, LOM_REF_PATH, INDEX_PATH, EXPLAIN_CONTEXT_WINDOW
 
@@ -149,7 +150,7 @@ def load_lom_schema():
         print(f"[Explain] Error loading LOM reference: {e}")
         return ""
 
-def explain_query(query_text, domain=None, version="8", model=EXPLAIN_MODEL, results_count=3, callback=None, stream_to_stdout=False):
+def explain_query(query_text, domain=None, version="8", model=EXPLAIN_MODEL, results_count=3, callback=None, stream_to_stdout=False, stop_event=None):
     """Retrieve relevant chunks and generate a prose explanation using local Ollama (supporting streaming)."""
     # Retrieve documents
     retrieved = query_vector_db(query_text, domain=domain, max_version=version, n_results=results_count)
@@ -204,6 +205,9 @@ def explain_query(query_text, domain=None, version="8", model=EXPLAIN_MODEL, res
         if response.status_code == 200:
             full_text = ""
             for line in response.iter_lines():
+                if stop_event and stop_event.is_set():
+                    print("[Explain] Stop event detected. Aborting explanation stream.")
+                    break
                 if line:
                     chunk = json.loads(line.decode('utf-8'))
                     token = chunk.get("message", {}).get("content", "")

@@ -25,3 +25,9 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# React UI Frontend
+ui/node_modules/
+ui/dist/
+ui/.env*
+

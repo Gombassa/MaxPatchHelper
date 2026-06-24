@@ -1,6 +1,6 @@
 # Max MSP AI Assistant Implementation Plan
 
-Implement a local, RAG-enabled AI assistant for Max MSP (v8 & v9) and Max for Live (M4L) with guided build, explanation, and patch generation capabilities.
+Implement a local, RAG-enabled AI assistant for Cycling '74 Max MSP (v8 & v9) and Max for Live (M4L) with guided build, explanation, and patch generation capabilities.
 
 ## Progress Summary
 
@@ -19,18 +19,20 @@ Implement a local, RAG-enabled AI assistant for Max MSP (v8 & v9) and Max for Li
 - **Context Size**: Set `num_ctx: 8192` in Ollama options and moved it to `config.py` as a configurable per-mode value (`explain` = 8192, `generate` = 16384).
 - **Chat API Segregation**: Refactored LLM connection to use Ollama's native `/api/chat` instead of `/api/generate`, segregating system rules and document contexts into separate roles.
 
-### Known Gaps Addressed
-1. **Index Coverage**: Auto-populated `inlet_outlet_index.json` from `data/raw/` reference JSON pages using `scraper/parse_inlets_outlets.py`.
-2. **M4L UI Objects**: Added the full set of M4L UI objects to the index (87 objects total).
-3. **Data Git-Ignoring**: Verified `inlet_outlet_index.json` and generated files are git-ignored.
+### Phase 3 — Complete
+- **Pydantic Validator (`assistant/validate.py`)**: Built validation models checking unique IDs, port bounds, unique M4L UI varnames/longnames, and M4L device requirements.
+- **Strict Port Count Table**: Configured `TRUSTED_PORT_COUNTS` to determine port counts for 25+ core Max/MSP/M4L objects.
+- **Inlet Conflict Check**: Added checks to prevent control rate (toggle/number) and signal rate sharing the same inlet of `dac~`.
+- **Validation Retry Loop (`assistant/generate.py`)**: Cap of 3 retry attempts, feeding validation errors back to the model.
+- **Stateful Guided REPL (`assistant/guided.py`)**: Steps through goal, object, line routing, verifying gitignore, and appending Technical Summaries to idioms layer.
 
 ---
 
 ## User Decisions & Alignments
 
-### Q1: VRAM Contention with SoundAgent
-- **Decision**: SoundAgent (audio analysis and tagging stack) can be gated and remains dormant most of the time. It will not compete for GPU resources during active MaxPatchHelper sessions.
-- **Approach**: We will proceed with `qwen2.5-coder:14b` as the primary generator model.
+### Q1: VRAM Contention & Hardware Limitations
+- **Decision**: GTX 1060 6GB has 6GB VRAM. qwen2.5-coder:14b requires ~9GB and cannot run on GPU. Hardware reality requires qwen2.5-coder:7b as the permanent generate model on this machine, not a temporary fallback.
+- **Approach**: We will proceed with `qwen2.5-coder:7b` as the permanent generate model with an 8K context window (`GENERATE_CONTEXT_WINDOW`).
 
 ### Q2: Scraping Restrictions & Rate-Limiting
 - **Decision**: Implement a polite crawler with rate-limiting pauses. 
@@ -70,29 +72,65 @@ Implement a local, RAG-enabled AI assistant for Max MSP (v8 & v9) and Max for Li
 - **Decision**: Keep private and dynamically generated data out of Git.
 - **Approach**: The vector store (`data/chroma/`), raw scraped documentation (`data/raw/` and `data/chunks.json`), example templates (`data/example_patches/`), personal idioms (`data/personal_idioms.md`), the static LOM schema (`data/lom_reference.json`), and any private `.maxpat` files are strictly local and ignored via `.gitignore`. Only the scraper/ingestion scripts, retrieval CLI, and general configuration are stored in the repository.
 
-## Phase 1 Scaling & Scaffolding Refinements
+---
 
-To scale Phase 1 from a 5-page proof-of-concept to the full Cycling '74 corpus:
+## Phase 4 — Web Application Development
 
-### 1. Crawl Scope & Page Count Estimation
-- **Target**: The full Max 8 object refpages, tutorials, vignettes, and M4L API documentation comprises approximately **600 to 800 pages** (excluding Jitter, which is out of scope).
-- **Refinement (Dry Run Verified)**: A dry run crawl verified exactly **842 unique valid pages** matching the filters, excluding Jitter. This will yield between **10,000 and 12,000 chunks** after tokenizer-aware splitting.
+Build a unified web interface consisting of a FastAPI backend and a React + Vite frontend.
 
-### 2. URL Link Filtering
-- **Issue**: The current scraper follows *any* link matching `docs.cycling74.com`, which leads to infinite crawls of forum threads, search pages, or unrelated versions.
-- **Refinement**: We restrict the crawler to follow links matching the patterns:
-  - `docs.cycling74.com/legacy/max8/refpages/`
-  - `docs.cycling74.com/legacy/max8/tutorials/`
-  - `docs.cycling74.com/legacy/max8/vignettes/`
-  - `docs.cycling74.com/apiref/` (for Live API references)
-  - With explicit exclusion rules rejecting files starting with `jit.` or paths containing `jitter`.
+### Phase 4 — In Progress
 
-### 3. Batching & Ingest Optimization (Ollama scale-up)
-- **Issue**: Processing 10,000 chunks sequentially at 2.3 seconds per chunk would take **~6.4 hours**.
-- **Refinement**:
-  - Update `scraper/ingest.py` to use Ollama's batch endpoint `/api/embed` (passing a list of inputs in a single HTTP request instead of individual `/api/embeddings` requests).
-  - Process batches sequentially (without multithreading) to avoid thread context-overhead on a single-GPU setup where Ollama processes requests serially anyway. This avoids downstream technical debt while capturing the full HTTP round-trip batch win.
-  - This reduces estimated ingest time from ~5 hours to **10–15 minutes**.
+- **FastAPI backend complete**: `/api/health`, `/api/retrieve`, `/api/validate`, `/api/explain` (SSE), `/api/generate` (SSE), `/api/ws/guided` (WebSocket)
+- **React + Vite frontend scaffolded and built successfully** (248ms, zero errors)
+- **Four tabs implemented**: Explainer, Generator, Guided Builder, Doc Explorer
+- **WebSocket lazy-open confirmed**: `GuidedBuilder` only connects on "Start Guided Session" button click
+- **`VITE_API_URL` and `VITE_WS_URL` configurable** via `ui/.env` (gitignored)
+- **Design tokens centralised** in `tokens.css` at `:root` level
+
+### Phase 4 — Remaining: End-to-End Verification (not yet run)
+
+- **Start backend**: `uvicorn assistant.server:app --reload --port 8000`
+- **Start frontend**: `cd ui && npm run dev`
+- **Verify health badge** shows green in UI
+- **Verify Explain tab** streams response to "what does cycle~ do"
+- **Verify Generator tab** produces valid patch for "a sine wave generator"
+- **Verify Guided Builder WebSocket** connects on button click and accepts a message
+- *Only after all four pass: approve commit and push*
+
+### 1. FastAPI Backend Server (`assistant/server.py`)
+Expose the assistant logic through REST and WebSocket endpoints:
+- **`GET /api/health`**: Lightweight health status endpoint returning backend version and status. Essential for client-side connection states.
+- **`POST /api/retrieve`**: Search vector DB documents.
+- **`POST /api/explain`**: Explains a Max/MSP question. Supports real-time token streaming using Server-Sent Events (SSE).
+- **`POST /api/generate`**: Generates a patch with a 3-attempt validation loop. Streams progress/attempts and outputs final `.maxpat` JSON.
+- **`POST /api/validate`**: Validates a patch JSON.
+- **`WS /api/ws/guided`**: Binds a stateful multi-turn WebSocket connection for the Guided Builder:
+  - **State Management**: Guided builder state (conversation history, spec spec details, etc.) lives in-memory server-side per active connection. 
+  - **Graceful Disconnection**: If the WebSocket drops, the connection handler intercepts the `WebSocketDisconnect` exception and safely cleans up memory. The backend will *never* attempt to write summaries or run the learning stage on unexpected connection loss, completely eliminating any risk of corrupting `personal_idioms.md`.
+  - **User Commands**: Only explicit `"exit"` messages from the client trigger the technical learning summary and idioms append.
+
+### 2. React + Vite Frontend (`ui/`)
+A responsive, high-performance, dark-themed Single Page Application:
+- **Design Tokens (HSL Dark System)**:
+  - Defined strictly as CSS custom properties at the `:root` level in `ui/src/index.css`.
+  - Background: Deep slate (`--bg-primary: #0d0f12`), dark surfaces (`--bg-surface: #14171c`), border colors (`--border-color: #21262d`).
+  - Text colors: High-contrast light gray (`--text-primary: #f3f4f6`) and medium gray (`--text-secondary: #8b949e`).
+  - Accent colors: Electric indigo (`--accent-primary: #6366f1` / `--accent-secondary: #4f46e5`).
+  - Font families: `Outfit` and `Inter` from Google Fonts.
+- **SSE Reconnection Management**:
+  - The React client uses native `EventSource` wrappers with exponential backoff timers.
+  - On sudden drop, it handles retry connection gracefully, presenting a clear reconnecting spinner without clearing already-streamed code/text blocks.
+- **Tabbed Layout**:
+  - **Q&A Explain Tab**: Interactive chat panel with markdown parsing and source document card sidebar.
+  - **Patch Generator Tab**: Prompt entry, live logging of validator attempts (console output), and a read-only code display with download/copy actions.
+  - **Guided Builder Tab**: Chat screen with a real-time floating sidebar showing the "CURRENT PATCH SPECIFICATION".
+  - **Doc Explorer Tab**: General search panel across scraped Max 8/9 refpages.
+
+---
+
+## User Review Required
+
+We are using a dark-theme glassmorphism design with Outfit/Inter typography and electric purple/indigo accents for a premium feel. We will avoid Tailwind CSS and write clean Vanilla CSS to ensure maximum performance and precise animations.
 
 ---
 
@@ -101,55 +139,32 @@ To scale Phase 1 from a 5-page proof-of-concept to the full Cycling '74 corpus:
 We will implement the codebase in the following structure under the workspace root:
 
 ### scraper
-
-#### [NEW] [crawl.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/scraper/crawl.py)
-Polite scraper to crawl Cycling '74 legacy docs and Live API reference, with support for scanning local Max help/ref directories.
-
-#### [NEW] [chunk.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/scraper/chunk.py)
-Tokenizer and chunker using `tiktoken`.
-
-#### [NEW] [ingest.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/scraper/ingest.py)
-Embeds and loads chunks into ChromaDB collections.
+*Already implemented and checked in.*
 
 ### assistant
 
-#### [NEW] [config.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/config.py)
-Centralizes assistant configuration parameters (models, endpoints, URLs, and context window sizes per mode).
-
-#### [NEW] [assistant.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant.py)
-Core CLI entry point routing mode flags (`--mode`, `--version`, `--domain`).
-
-#### [NEW] [retrieve.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/retrieve.py)
-Handles ChromaDB collection queries with metadata filtering.
-
-#### [NEW] [classify.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/classify.py)
-LLM pre-prompt classifier for query intent.
-
-#### [NEW] [validate.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/validate.py)
-Custom `.maxpat` JSON validator. Uses Pydantic models to verify JSON structure, unique box IDs, valid line source/destination mappings, and domain-specific constraints (e.g. M4L UI parameters unique names, `plugin~`/`plugout~` presence for audio effects).
-
-#### [NEW] [generate.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/generate.py)
-Generates valid `.maxpat` patches using `qwen2.5-coder:14b` with a 16K context window (`GENERATE_CONTEXT_WINDOW`). Features a validation retry loop that feeds validation errors back to the model for automatic self-correction.
-
-#### [NEW] [guided.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/guided.py)
-Interactive REPL walkthrough for building patches step-by-step. Manages multi-turn design state, explicitly confirms M4L constraints before generation, and creates end-of-session summaries to update the personal idioms layer.
+#### [MODIFY] [config.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/config.py)
+Update to configure backend host/port, CORS origins, and web server parameters.
 
 #### [NEW] [server.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/server.py)
-FastAPI backend server exposing REST and WebSocket endpoints (like `/explain`, `/generate`, `/guided`) for the React frontend.
+FastAPI backend server exposing REST and WebSocket endpoints (like `/api/explain`, `/api/generate`, `/api/ws/guided`) for the React frontend.
+
+### ui
+
+#### [NEW] [ui/](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/ui)
+Vite-based React frontend project directory.
 
 ---
 
 ## Verification Plan
 
 ### Automated Tests
-- Create `tests/test_validate.py` containing unit tests to verify:
-  - Detection of invalid JSON structures.
-  - Identification of dangling lines or duplicate box IDs.
-  - M4L-specific rules (verifying `audio_effect` fails if `plugin~` or `plugout~` is missing).
-- Run validation checks on standard sample patches in `data/example_patches/`.
+- Test WebSocket endpoints and REST endpoints in a new `tests/test_server.py`.
+- Verify CORS config.
 
 ### Manual Verification
-- Generate an MSP patch: `python assistant.py --mode generate "a basic sine wave generator with gain control"`.
-- Generate an M4L patch: `python assistant.py --mode generate "a stereo volume control dial for Max for Live"`.
-- Verify the generated JSON loads without error in Cycling '74 Max 8/9.
-- Run interactive guided build REPL: `python assistant.py --mode guided`. Verify that it steps through goal definition, object selection, line routing, and outputs valid JSON at the end.
+- Start FastAPI server: `python assistant/server.py` or `uvicorn assistant.server:app --reload`.
+- Start Vite React UI: `npm run dev` inside `ui/`.
+- Verify real-time explanation streaming in Q&A tab.
+- Verify live-logging of validator loops and successful patch output in Generator tab.
+- Run a full interactive guided spec design session and compile/generate the final patch.
