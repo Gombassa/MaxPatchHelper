@@ -1,13 +1,13 @@
 # Max MSP AI Assistant Implementation Plan
 
-Implement a local, RAG-enabled AI assistant for Cycling '74 Max MSP (v8 & v9) and Max for Live (M4L) with guided build, explanation, and patch generation capabilities.
+Implement a local, RAG-enabled AI assistant for Cycling '74 Max MSP (v8) and Max for Live (M4L) with guided build, explanation, and patch generation capabilities.
 
 ## Progress Summary
 
 ### Phase 1 — Complete
 - **Scrape & Chunk**: Scraped 842 unique valid pages of documentation and reference tables, chunking them to 21,498 chunks using `tiktoken`.
 - **Embed & Ingest**: Generated vector embeddings via `nomic-embed-text` and ingested chunks into local ChromaDB `max8_docs` collection.
-- **Performance Note**: Ingestion took ~3 hours due to unbatched embedding calls. We must fix batching before re-ingesting for Max 9.
+- **Performance Note**: Ingestion took ~3 hours due to unbatched embedding calls. We must fix batching before any future ingestion updates.
 - **Verification**: Verified that exact-match `cycle~` retrieval and general M4L tempo/LOM retrieval both return correct results.
 
 ### Phase 2 — Complete
@@ -124,7 +124,7 @@ A responsive, high-performance, dark-themed Single Page Application:
   - **Q&A Explain Tab**: Interactive chat panel with markdown parsing and source document card sidebar.
   - **Patch Generator Tab**: Prompt entry, live logging of validator attempts (console output), and a read-only code display with download/copy actions.
   - **Guided Builder Tab**: Chat screen with a real-time floating sidebar showing the "CURRENT PATCH SPECIFICATION".
-  - **Doc Explorer Tab**: General search panel across scraped Max 8/9 refpages.
+  - **Doc Explorer Tab**: General search panel across scraped Max 8 refpages.
 
 ---
 

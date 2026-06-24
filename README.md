@@ -1,6 +1,6 @@
 # Max MSP AI Assistant (MaxPatchHelper)
 
-A local, RAG-enabled AI assistant for Cycling '74 Max MSP (v8 & v9) and Max for Live (M4L) that provides interactive explanations, guided build sessions, and automated patch generation with self-correcting validation.
+A local, RAG-enabled AI assistant for Cycling '74 Max MSP (v8) and Max for Live (M4L) that provides interactive explanations, guided build sessions, and automated patch generation with self-correcting validation.
 
 ---
 

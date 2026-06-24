@@ -136,19 +136,6 @@ export default function DocExplorer() {
           </div>
 
           <div className="form-group">
-            <label className="control-label">Max Version:</label>
-            <select
-              value={version}
-              onChange={(e) => setVersion(e.target.value)}
-              className="select-input"
-              disabled={isSearching}
-            >
-              <option value="8">Max 8</option>
-              <option value="9">Max 9</option>
-            </select>
-          </div>
-
-          <div className="form-group">
             <label className="control-label">Result Limit:</label>
             <select
               value={limit}
