@@ -7,61 +7,10 @@ from typing import Dict, Any, List, Optional
 from retrieve import query_vector_db
 from explain import load_inlet_outlet_index, load_lom_schema, detect_m4l_context
 from validate import validate_patch
-from config import OLLAMA_CHAT_URL, GENERATE_CONTEXT_WINDOW, GENERATE_MODEL
-EXAMPLE_MAX_PATCH_PATH = "data/example_patches/max/sine_generator.json"
-EXAMPLE_M4L_PATCH_PATH = "data/example_patches/m4l/audio_effect_volume.json"
-GENERATE_SYSTEM_PROMPT = """You are an expert offline AI assistant specialized in generating valid JSON patcher files (.maxpat) for Cycling '74 Max MSP and Max for Live (M4L).
-Your goal is to output a single, structurally valid, and fully-functioning .maxpat JSON patch or sub-patch that fulfills the user's description.
-
-Follow these strict formatting and structural rules:
-1. Output ONLY a valid JSON block, optionally wrapped in a markdown ```json ``` code block. Do not write any prose explanation before or after the JSON.
-2. Ground your patch structure in the provided "Documentation Context" chunks and "Structured Inlet/Outlet Index".
-3. Connections (lines) MUST use correct, existing box IDs (e.g. "obj-1") and valid, 0-indexed inlet/outlet ports. 
-   - Verify: If an object has 1 outlet, the only valid outlet index is 0. If it has 2 inlets, the valid inlet indices are 0 and 1.
-4. M4L UI parameters (live.dial, live.slider, live.numbox, live.button, live.toggle, live.menu, live.gain~) MUST carry unique "varname" and unique "parameter_longname" properties, and "parameter_enable" MUST be set to 1. Crucially, "parameter_longname" MUST be nested inside the box structure under "saved_attribute_attributes" -> "valueof" -> "parameter_longname" (along with "parameter_shortname" and "parameter_type"). Do not place parameter_longname at the box root level.
-5. Max for Live Anchors and Routing Direction:
-   - "plugin~" has 0 inlets and 2 outlets. It is the audio input from Live. You must only connect lines FROM its outlets.
-   - "plugout~" has 2 inlets and 0 outlets. It is the audio output to Live. You must only connect lines INTO its inlets.
-   - "live.thisdevice" has 0 inlets and 2 outlets. It is a load trigger. You must only connect lines FROM its left outlet (outlet 0) to other objects to trigger them. NEVER connect any line into "live.thisdevice" or change its inlet/outlet count.
-   - UI elements (e.g. live.dial) have 1 inlet (inlet 0) and 2 outlets. The left outlet (outlet 0) outputs the value.
-   - Audio Effects MUST contain a "plugin~" object (audio input) and a "plugout~" object (audio output).
-   - Instruments MUST contain a MIDI input object ("midiin" or "notein") and a "plugout~" object.
-   - MIDI Effects MUST contain a MIDI input object and a MIDI output object ("midiout" or "noteout").
-   - Max for Live patches should include a "live.thisdevice" object to trigger path and observer initializations on load.
-7. Signal rate objects must carry the "~" suffix (e.g., "cycle~", "gain~", "dac~").
-8. Always coordinate ID naming sequentially starting from "obj-1", "obj-2", "obj-3", etc. Ensure no duplicate box IDs exist. NEVER jump to high ID numbers like "obj-100" or "obj-121" unless you actually have 100+ objects (which you shouldn't, as patches should be kept small).
-9. Keep the patch as minimal and simple as possible. ONLY generate the objects absolutely necessary to satisfy the prompt. Never generate duplicate, redundant, or unused elements. Do NOT feel obliged to use every object listed in the "Structured Inlet/Outlet Index" or "Documentation Context". The index and context are provided for reference only.
-10. Semantic constraint for audio output (dac~): dac~ inlet 0 accepts an audio signal OR an on/off integer control message, but NOT both simultaneously. If a toggle is used to turn audio on/off, do not connect it directly to the same inlet (inlet 0) that receives left-channel audio. Instead, wire the toggle separately (e.g. to a message box sending 'start'/'stop' to dac~, or to a separate dac~ object, or connect the toggle to dac~ via a 't b' object, or use ezdac~ which has a built-in on/off button).
-11. Max for Live Objects Whitelist and JSON format:
-    - ONLY use valid live.* objects: live.dial, live.slider, live.numbox, live.button, live.toggle, live.text, live.menu, live.tab, live.arrows, live.gain~, live.meter~, live.step, live.grid, live.line, live.drop, live.banks, live.comment, live.thisdevice, live.path, live.observer, live.object, live.remote~, live.param~.
-    - NEVER generate objects like live.device, live.control, live.controlsurface, or live.macrocontrol. They do not exist in Max.
-    - In your JSON, LOM objects must be "newobj" with text: "live.path", "live.observer", "live.object", "live.thisdevice". Ensure they carry their correct physical inlet/outlet ports:
-      * {"box": {"id": "obj-A", "maxclass": "newobj", "text": "live.path", "numinlets": 1, "numoutlets": 2}}
-      * {"box": {"id": "obj-B", "maxclass": "newobj", "text": "live.observer", "numinlets": 2, "numoutlets": 2}}
-      * {"box": {"id": "obj-C", "maxclass": "newobj", "text": "live.object", "numinlets": 2, "numoutlets": 2}}
-      * {"box": {"id": "obj-D", "maxclass": "newobj", "text": "live.thisdevice", "numinlets": 0, "numoutlets": 2}}
-12. Message Boxes and LOM Connection Directions:
-    - Message boxes MUST use "maxclass": "message" and their contents in "text". NEVER write {"box": {"maxclass": "newobj", "text": "message", ...}} or {"box": {"maxclass": "newobj", "text": "message path..."}}.
-    - Example of a message box: {"box": {"id": "obj-3", "maxclass": "message", "text": "path live_set tracks 0 devices 0 parameters 1", "numinlets": 2, "numoutlets": 1}}
-    - Routing rules for LOM objects (observe carefully: target ID always goes to inlet 1 (right inlet), control messages always go to inlet 0 (left inlet)):
-      * live.path (1 inlet): inlet 0 receives the path message box output.
-      * live.object (2 inlets): inlet 0 receives the "set value $1" message box. inlet 1 receives the resolved ID from live.path outlet 0.
-      * live.observer (2 inlets): inlet 0 receives the observed property message (e.g. "property tempo"). inlet 1 receives the resolved ID from live.path outlet 0.
-    - Reference LOM Parameter Control Connection Template (Copy this wiring layout exactly):
-      * live.thisdevice (obj-6) outlet 0 -> path message box (obj-3) inlet 0 (triggers resolution on load)
-      * path message box (obj-3) outlet 0 -> live.path (obj-1) inlet 0
-      * live.path (obj-1) outlet 0 (resolved ID) -> live.object (obj-4) inlet 1 (right inlet)
-      * live.dial (obj-2) outlet 0 -> set value message box (obj-5) inlet 0
-      * set value message box (obj-5) outlet 0 -> live.object (obj-4) inlet 0 (left inlet)
-      * Optional MIDI CC input: ctlin (obj-7) outlet 0 -> live.dial (obj-2) inlet 0
-13. Parameter Scope and UI Constraints:
-    - Only UI elements (like live.dial, live.slider, live.toggle, live.numbox) can carry "parameter_enable": 1 and saved parameter attributes. Non-UI API objects (like live.path, live.observer, live.object, live.thisdevice) must NOT carry "parameter_enable": 1.
-    - EVERY M4L UI dial/slider/toggle/numbox MUST have a "varname" key directly at the root of the box dictionary (e.g. "varname": "macro_dial_1").
-14. STRICT Minimality and Loop Prevention:
-    - DO NOT generate multiple redundant copy-pasted objects (such as generating 10+ '*~' or '*' objects).
-    - If you are building a MIDI CC receiver or controller, use ONE 'ctlin' or 'midiin' and a single path handler, not separate pathways for every imaginable value.
-    - A typical M4L patch is highly compact and should have no more than 6-10 total boxes. Do not generate large lists of dummy objects.
-"""
+from config import OLLAMA_CHAT_URL, GENERATE_CONTEXT_WINDOW, GENERATE_MODEL, DATA_DIR
+from prompts import GENERATE_SYSTEM_PROMPT
+EXAMPLE_MAX_PATCH_PATH = os.path.join(DATA_DIR, "example_patches", "max", "sine_generator.json")
+EXAMPLE_M4L_PATCH_PATH = os.path.join(DATA_DIR, "example_patches", "m4l", "audio_effect_volume.json")
 
 GENERATE_USER_TEMPLATE = """Below is the context to help you design and output a valid Max MSP / M4L patch.
 
@@ -77,12 +26,7 @@ DOCUMENTATION CONTEXT:
 ==================================================
 EXAMPLE REFERENCE PATCH FORMAT:
 {example_patch_text}
-==================================================
-
-USER REQUEST:
-Generate a patch for: {query}
-
-JSON PATCH OUTPUT:"""
+=================================================="""
 
 def detect_m4l_device_type(query_text: str) -> str:
     query_lower = query_text.lower()
@@ -169,13 +113,16 @@ def generate_patch(
     # 5. Load example patch
     example_patch_text = load_example_patch(domain)
     
-    # 6. Build initial user prompt
-    user_prompt = GENERATE_USER_TEMPLATE.format(
-        structured_index_text=structured_index_text,
-        context_text=context_text,
-        lom_schema_text=lom_schema_text,
-        example_patch_text=example_patch_text,
-        query=query_text
+    # 6. Build initial user prompt — query concatenated separately to avoid .format() injection
+    user_prompt = (
+        GENERATE_USER_TEMPLATE.format(
+            structured_index_text=structured_index_text,
+            context_text=context_text,
+            lom_schema_text=lom_schema_text,
+            example_patch_text=example_patch_text,
+        )
+        + f"\n\nUSER REQUEST:\nGenerate a patch for: {query_text}"
+        + "\n\nJSON PATCH OUTPUT:"
     )
     
     # 7. Initialize Chat History

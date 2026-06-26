@@ -5,6 +5,14 @@ import requests
 import chromadb
 from config import CHROMA_DB_PATH, OLLAMA_EMBED_URL, EMBED_MODEL
 
+_chroma_client = None
+
+def _get_client() -> chromadb.PersistentClient:
+    global _chroma_client
+    if _chroma_client is None:
+        _chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+    return _chroma_client
+
 
 def get_embedding(text, model=EMBED_MODEL):
     """Generate vector embedding using local Ollama."""
@@ -30,7 +38,7 @@ def query_vector_db(query_text, collection_name="max8_docs", domain=None, max_ve
         print(f"[Retrieve] Error: ChromaDB not found at {CHROMA_DB_PATH}. Run crawl, chunk, and ingest first.")
         return []
 
-    chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+    chroma_client = _get_client()
     
     try:
         collection = chroma_client.get_collection(name=collection_name)
@@ -66,7 +74,7 @@ def query_vector_db(query_text, collection_name="max8_docs", domain=None, max_ve
             try:
                 results = collection.query(
                     query_embeddings=[query_vector],
-                    n_results=max(6, n_results),
+                    n_results=max(3, n_results),
                     where=title_where
                 )
                 if results and results.get("documents") and results["documents"][0]:

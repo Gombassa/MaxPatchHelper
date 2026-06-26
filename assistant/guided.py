@@ -6,30 +6,11 @@ from typing import List, Dict, Any, Optional
 from retrieve import query_vector_db
 from explain import load_inlet_outlet_index, load_lom_schema, detect_m4l_context
 from generate import generate_patch
-from config import OLLAMA_CHAT_URL, GUIDED_MODEL, GUIDED_CONTEXT_WINDOW, DATA_DIR
+from config import OLLAMA_CHAT_URL, GUIDED_MODEL, GUIDED_CONTEXT_WINDOW, DATA_DIR, GENERATE_MODEL
+from prompts import GUIDED_SYSTEM_PROMPT
 
 # Path to personal idioms
 IDIOMS_PATH = os.path.join(DATA_DIR, "personal_idioms.md")
-
-GUIDED_SYSTEM_PROMPT = """You are an interactive AI design partner specialized in Cycling '74 Max MSP and Max for Live (M4L) patch design.
-Your role is to guide the user step-by-step in planning, designing, and constructing a functional Max patch.
-
-Follow these strict design guidelines:
-1. Act as a collaborative assistant: ask clarifying questions, propose clear layouts (inputs, processing, outputs), and suggest appropriate objects.
-2. Rely on the provided "Documentation Context" and "Structured Inlet/Outlet Index" when proposing objects.
-3. If building for Max for Live (M4L), explicitly remind the user of core anchors:
-   - Audio Effects require "plugin~" and "plugout~".
-   - Instruments require "midiin"/"notein" and "plugout~" (with no audio input "plugin~").
-   - MIDI Effects require "midiin"/"notein" and "midiout"/"noteout".
-   - UI parameters (live.dial, live.slider, etc.) must carry unique varnames, longnames, and parameter_enable=1.
-4. Keep track of the current design specification. At the end of every response, output a markdown section "CURRENT PATCH SPECIFICATION" summarizing:
-   - Target Domain: (Max, MSP, or M4L)
-   - Device Type: (e.g. Audio Effect, Instrument, MIDI Effect, or N/A)
-   - Proposed Objects: (list with proposed box IDs and attributes)
-   - Proposed Connections: (list of patch lines between box IDs and inlets/outlets)
-5. Keep your tone helpful, technical, and precise. Do not output raw JSON patch code during the conversation; only suggest the design specifications.
-6. When the user is satisfied, tell them they can type "generate" to build the patch.
-"""
 
 ENRICHED_USER_TEMPLATE = """Below is the context for the current turn of the design session.
 
@@ -39,13 +20,7 @@ ENRICHED_USER_TEMPLATE = """Below is the context for the current turn of the des
 
 {lom_schema_section}
 
-{context_section}
-
-==================================================
-USER INPUT:
-{user_input}
-==================================================
-"""
+{context_section}"""
 
 def check_gitignore_for_idioms() -> bool:
     """Verifies that data/personal_idioms.md is listed in .gitignore to prevent committing personal history."""
@@ -194,14 +169,16 @@ def run_guided_build_session():
         if domain_context == "m4l":
             lom_schema_text = load_lom_schema()
 
-        # 5. Format Enriched User message for current turn
-        # We include personal idioms, matching indexes, LOM schema, and documentation context
-        enriched_user_content = ENRICHED_USER_TEMPLATE.format(
-            personal_idioms_section=personal_idioms_text,
-            structured_index_section=structured_index_text,
-            lom_schema_section=lom_schema_text,
-            context_section=context_text,
-            user_input=user_input
+        # 5. Format Enriched User message for current turn — user_input concatenated
+        # separately to avoid .format() injection via curly braces in user text
+        enriched_user_content = (
+            ENRICHED_USER_TEMPLATE.format(
+                personal_idioms_section=personal_idioms_text,
+                structured_index_section=structured_index_text,
+                lom_schema_section=lom_schema_text,
+                context_section=context_text,
+            )
+            + f"\n\n==================================================\nUSER INPUT:\n{user_input}\n=================================================="
         )
 
         # 6. Prepare messages list for API call
@@ -375,7 +352,7 @@ def run_generation_stage(session_history: List[Dict[str, str]], domain: str):
         return
 
     # Trigger generation
-    print(f"\n[Guided] Starting patch generator using qwen2.5-coder:14b (domain: {domain})...")
+    print(f"\n[Guided] Starting patch generator using {GENERATE_MODEL} (domain: {domain})...")
     gen_result = generate_patch(
         query_text=spec_summary,
         domain=domain,

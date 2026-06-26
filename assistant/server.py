@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import asyncio
+import functools
 import queue
 import threading
 import requests
@@ -310,13 +311,15 @@ async def websocket_guided_build(websocket: WebSocket):
                 structured_index_text = load_inlet_outlet_index(text, context_text)
                 lom_schema_text = load_lom_schema() if domain_context == "m4l" else ""
                 
-                # Format turn prompt
-                enriched_user_content = ENRICHED_USER_TEMPLATE.format(
-                    personal_idioms_section=idioms_text,
-                    structured_index_section=structured_index_text,
-                    lom_schema_section=lom_schema_text,
-                    context_section=context_text,
-                    user_input=text
+                # Format turn prompt — text concatenated separately to avoid .format() injection
+                enriched_user_content = (
+                    ENRICHED_USER_TEMPLATE.format(
+                        personal_idioms_section=idioms_text,
+                        structured_index_section=structured_index_text,
+                        lom_schema_section=lom_schema_text,
+                        context_section=context_text,
+                    )
+                    + f"\n\n==================================================\nUSER INPUT:\n{text}\n=================================================="
                 )
                 
                 # Append user prompt to history
@@ -336,7 +339,7 @@ async def websocket_guided_build(websocket: WebSocket):
                 if full_response:
                     session_history.append({"role": "assistant", "content": full_response})
                     # Extract the CURRENT PATCH SPECIFICATION section to send separately
-                    extract_and_send_spec(websocket, full_response)
+                    await extract_and_send_spec(websocket, full_response)
                     
     except WebSocketDisconnect:
         # Handle graceful cleanup on drop, preventing file corruption
@@ -355,8 +358,9 @@ async def websocket_guided_build(websocket: WebSocket):
 async def run_websocket_llm_turn(websocket: WebSocket, api_messages: List[Dict[str, str]]) -> str:
     """Invokes LLM for guided build turn, pushing stream tokens to WebSocket."""
     q = queue.Queue()
+    stop_event = threading.Event()
 
-    def target():
+    def target(stop_event: threading.Event):
         try:
             response = requests.post(
                 OLLAMA_CHAT_URL,
@@ -376,6 +380,8 @@ async def run_websocket_llm_turn(websocket: WebSocket, api_messages: List[Dict[s
                 q.put(Exception(f"Ollama returned HTTP {response.status_code}"))
                 return
             for line in response.iter_lines():
+                if stop_event.is_set():
+                    break
                 if line:
                     chunk = json.loads(line.decode('utf-8'))
                     token = chunk.get("message", {}).get("content", "")
@@ -385,51 +391,62 @@ async def run_websocket_llm_turn(websocket: WebSocket, api_messages: List[Dict[s
         finally:
             q.put(None)
 
-    threading.Thread(target=target, daemon=True).start()
+    threading.Thread(target=target, args=(stop_event,), daemon=True).start()
 
     full_response = ""
-    while True:
-        try:
-            token = q.get_nowait()
-            if token is None:
-                break
-            if isinstance(token, Exception):
-                await websocket.send_json({"type": "error", "content": str(token)})
-                break
-            full_response += token
-            await websocket.send_json({"type": "token", "content": token})
-        except queue.Empty:
-            await asyncio.sleep(0.01)
-            
+    try:
+        while True:
+            try:
+                token = q.get_nowait()
+                if token is None:
+                    break
+                if isinstance(token, Exception):
+                    await websocket.send_json({"type": "error", "content": str(token)})
+                    break
+                full_response += token
+                await websocket.send_json({"type": "token", "content": token})
+            except queue.Empty:
+                await asyncio.sleep(0.01)
+    finally:
+        stop_event.set()
+
     return full_response
 
-def extract_and_send_spec(websocket: WebSocket, text: str):
+async def extract_and_send_spec(websocket: WebSocket, text: str):
     """Finds the 'CURRENT PATCH SPECIFICATION' section in text and pushes it to client."""
     spec_markers = [
         "CURRENT PATCH SPECIFICATION",
         "Current Patch Specification",
         "current patch specification"
     ]
-    
+
     spec_start = -1
     for marker in spec_markers:
         idx = text.find(marker)
         if idx != -1:
             spec_start = idx
             break
-            
+
     if spec_start != -1:
         # Move start back to capture heading formatting (e.g. ## or ###) if present
         prefix = text[:spec_start]
         heading_idx = prefix.rfind("#")
         start_pos = heading_idx if heading_idx != -1 and (spec_start - heading_idx) < 10 else spec_start
         spec_content = text[start_pos:].strip()
-        
-        # Send spec update asynchronously via task run
-        asyncio.create_task(websocket.send_json({
+
+        await websocket.send_json({
             "type": "spec",
             "content": spec_content
-        }))
+        })
+
+async def _ollama_post(payload: dict, timeout: int = 300) -> requests.Response:
+    """Run a blocking requests.post to Ollama in a thread so the event loop stays free."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        functools.partial(requests.post, OLLAMA_CHAT_URL, json=payload, timeout=timeout)
+    )
+
 
 async def run_websocket_learning_stage(websocket: WebSocket, session_history: List[Dict[str, str]]):
     """Generates idioms summary at the end of the session, appending it to personal_idioms.md."""
@@ -455,25 +472,21 @@ async def run_websocket_learning_stage(websocket: WebSocket, session_history: Li
         summary_prompt += f"\n[{role}]: {msg['content']}\n"
 
     try:
-        response = requests.post(
-            OLLAMA_CHAT_URL,
-            json={
-                "model": GUIDED_MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a concise technical summarizer. Output a concise markdown bulleted list of lessons learned, design choices, and personal idioms from the session."
-                    },
-                    {"role": "user", "content": summary_prompt}
-                ],
-                "stream": False,
-                "options": {
-                    "temperature": 0.1,
-                    "num_ctx": GUIDED_CONTEXT_WINDOW
-                }
-            },
-            timeout=300
-        )
+        response = await _ollama_post({
+            "model": GUIDED_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a concise technical summarizer. Output a concise markdown bulleted list of lessons learned, design choices, and personal idioms from the session."
+                },
+                {"role": "user", "content": summary_prompt}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": 0.1,
+                "num_ctx": GUIDED_CONTEXT_WINDOW
+            }
+        })
 
         if response.status_code == 200:
             summary_text = response.json().get("message", {}).get("content", "").strip()
@@ -525,25 +538,21 @@ async def run_websocket_generation_stage(websocket: WebSocket, session_history: 
 
     spec_summary = ""
     try:
-        response = requests.post(
-            OLLAMA_CHAT_URL,
-            json={
-                "model": GUIDED_MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a technical analyst. Extract a clear, structured list of objects and connection specifications from the conversation. Do not generate JSON, only a structured text spec list."
-                    },
-                    {"role": "user", "content": spec_prompt}
-                ],
-                "stream": False,
-                "options": {
-                    "temperature": 0.1,
-                    "num_ctx": GUIDED_CONTEXT_WINDOW
-                }
-            },
-            timeout=300
-        )
+        response = await _ollama_post({
+            "model": GUIDED_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a technical analyst. Extract a clear, structured list of objects and connection specifications from the conversation. Do not generate JSON, only a structured text spec list."
+                },
+                {"role": "user", "content": spec_prompt}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": 0.1,
+                "num_ctx": GUIDED_CONTEXT_WINDOW
+            }
+        })
         if response.status_code == 200:
             spec_summary = response.json().get("message", {}).get("content", "").strip()
             await websocket.send_json({

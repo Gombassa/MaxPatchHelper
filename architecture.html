@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Max MSP Assistant — Architecture Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #111111;
+    --surface:   #1c1c1c;
+    --surface2:  #242424;
+    --border:    #2e2e2e;
+    --border2:   #3a3a3a;
+    --amber:     #E8A022;
+    --amber-dim: #7a5210;
+    --green:     #4caf72;
+    --purple:    #9b74d4;
+    --blue:      #5b8dd9;
+    --red:       #d46b6b;
+    --text:      #e8e8e8;
+    --text-dim:  #888888;
+    --text-muted:#555555;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Inter', sans-serif;
+    --sidebar-w: 220px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.7;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding-bottom: 32px;
+  }
+
+  .sidebar-logo {
+    padding: 20px 16px 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+
+  .sidebar-logo .product {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--amber);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .sidebar-logo .doc-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .nav-section { padding: 12px 16px 0; }
+
+  .nav-section-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    text-decoration: none;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: var(--mono);
+    transition: background 0.1s, color 0.1s;
+    margin-bottom: 1px;
+  }
+
+  .nav-link:hover { background: var(--surface2); color: var(--text); }
+
+  /* ── Main ── */
+  .main {
+    flex: 1;
+    min-width: 0;
+    padding: 48px 56px 80px;
+    max-width: 920px;
+  }
+
+  /* ── Doc header ── */
+  .doc-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 32px;
+    margin-bottom: 48px;
+  }
+
+  .doc-eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .doc-title-main {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+
+  .doc-subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 18px;
+  }
+
+  .doc-meta { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  .max-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    border-radius: 2px;
+  }
+
+  .max-tag.hi { border-color: var(--amber-dim); color: var(--amber); }
+  .max-tag .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  /* ── Sections ── */
+  .section { margin-bottom: 52px; scroll-margin-top: 32px; }
+
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .section-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    border: 1.5px solid var(--amber);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--amber);
+    border-radius: 2px;
+    min-width: 32px;
+    flex-shrink: 0;
+  }
+
+  h1.section-title {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  h2.sub-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--amber);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 28px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  h2.sub-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  p {
+    color: var(--text-dim);
+    line-height: 1.75;
+    margin-bottom: 12px;
+  }
+
+  p strong { color: var(--text); font-weight: 600; }
+
+  /* ── Module cards ── */
+  .module-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 16px 0 24px;
+  }
+
+  .module-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .module-card.owns-data { border-left: 3px solid var(--amber); }
+  .module-card.owns-llm  { border-left: 3px solid var(--green); }
+  .module-card.owns-io   { border-left: 3px solid var(--blue); }
+  .module-card.owns-val  { border-left: 3px solid var(--purple); }
+  .module-card.owns-cfg  { border-left: 3px solid var(--text-muted); }
+
+  .module-header {
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .module-filename {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .module-tag {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-left: auto;
+  }
+
+  .tag-data   { background: rgba(232,160,34,0.12); color: var(--amber); }
+  .tag-llm    { background: rgba(76,175,114,0.12); color: var(--green); }
+  .tag-io     { background: rgba(91,141,217,0.12); color: var(--blue); }
+  .tag-val    { background: rgba(155,116,212,0.12); color: var(--purple); }
+  .tag-cfg    { background: rgba(136,136,136,0.12); color: var(--text-dim); }
+  .tag-entry  { background: rgba(212,107,107,0.12); color: var(--red); }
+
+  .module-body { padding: 10px 14px; }
+
+  .module-body .owns {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+  }
+
+  .module-body .desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 8px;
+  }
+
+  .module-body .imports-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .imp {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 2px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  .imp.allowed { border-color: var(--green); color: var(--green); }
+  .imp.forbidden { border-color: var(--red); color: var(--red); }
+
+  /* ── Rule table ── */
+  .rule-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 24px;
+    font-size: 12px;
+  }
+
+  .rule-table th {
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 9px 12px;
+    text-align: left;
+    border: 1px solid var(--border);
+  }
+
+  .rule-table td {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+
+  .rule-table tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+
+  .rule-table td:first-child {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  /* ── Flow diagram ── */
+  .flow {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px 24px;
+    margin: 14px 0 24px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 2;
+    overflow-x: auto;
+  }
+
+  .flow .step { color: var(--amber); font-weight: 700; }
+  .flow .file { color: var(--green); }
+  .flow .arrow { color: var(--text-muted); }
+  .flow .note  { color: var(--text-muted); font-size: 11px; }
+
+  /* ── Code block ── */
+  .code-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green);
+    border-radius: 3px;
+    padding: 14px 16px;
+    margin: 10px 0 20px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #a8d8a8;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* ── Note callout ── */
+  .note {
+    background: rgba(232,160,34,0.06);
+    border-left: 3px solid var(--amber);
+    padding: 10px 14px;
+    margin: 10px 0 20px;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.65;
+    border-radius: 0 3px 3px 0;
+  }
+
+  .note strong { color: var(--amber); }
+
+  .warn {
+    background: rgba(212,107,107,0.06);
+    border-left: 3px solid var(--red);
+    padding: 10px 14px;
+    margin: 10px 0 20px;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.65;
+    border-radius: 0 3px 3px 0;
+  }
+
+  .warn strong { color: var(--red); }
+
+  /* ── Data table ── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 24px;
+    font-size: 12px;
+  }
+
+  .data-table th {
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 9px 12px;
+    text-align: left;
+    border: 1px solid var(--border);
+  }
+
+  .data-table td {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    vertical-align: top;
+    line-height: 1.5;
+    font-size: 12px;
+  }
+
+  .data-table tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+  .data-table td:first-child { font-family: var(--mono); color: var(--text); white-space: nowrap; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="product">Max MSP Assistant</div>
+    <div class="doc-title">Architecture Reference</div>
+  </div>
+  <div class="nav-section" style="margin-top:12px">
+    <div class="nav-section-label">Sections</div>
+    <a href="#principle" class="nav-link">1 · Core Principle</a>
+    <a href="#modules" class="nav-link">2 · Module Map</a>
+    <a href="#ownership" class="nav-link">3 · Ownership Rules</a>
+    <a href="#flow" class="nav-link">4 · Request Flow</a>
+    <a href="#data" class="nav-link">5 · Data Files</a>
+    <a href="#forbidden" class="nav-link">6 · Forbidden Patterns</a>
+    <a href="#housekeeping" class="nav-link">7 · Pending Housekeeping</a>
+    <a href="#session" class="nav-link">8 · Session Checklist</a>
+  </div>
+  <div class="nav-section" style="margin-top:16px">
+    <div class="nav-section-label">Module Legend</div>
+    <div style="padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--amber)">▌ Data / reference</div>
+    <div style="padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--green)">▌ LLM / inference</div>
+    <div style="padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--blue)">▌ I/O / API layer</div>
+    <div style="padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--purple)">▌ Validation</div>
+    <div style="padding:4px 8px;font-family:var(--mono);font-size:10px;color:var(--text-muted)">▌ Config / shared</div>
+  </div>
+</nav>
+
+<main class="main">
+
+  <header class="doc-header">
+    <div class="doc-eyebrow">Architecture Reference</div>
+    <div class="doc-title-main">Max MSP Assistant</div>
+    <p class="doc-subtitle">Module ownership, import rules, request flow, and session discipline. Read this before touching any file.</p>
+    <div class="doc-meta">
+      <span class="max-tag hi"><span class="dot"></span>v1.0 post-review</span>
+      <span class="max-tag"><span class="dot"></span>June 2026</span>
+      <span class="max-tag"><span class="dot"></span>9 modules · 1 server · 9 data files</span>
+    </div>
+  </header>
+
+
+  <!-- 1. CORE PRINCIPLE -->
+  <section class="section" id="principle">
+    <div class="section-header">
+      <span class="section-num">1</span>
+      <h1 class="section-title">Core Principle</h1>
+    </div>
+
+    <p>Every file in <code style="font-family:var(--mono);font-size:11px;color:var(--green)">assistant/</code> owns exactly one concern. No file duplicates a constant, function, or responsibility owned by another. When you need to add something, the first question is always <strong>which file owns this?</strong> — not which file is convenient to put it in.</p>
+
+    <p>The three rules that follow from this:</p>
+
+    <div class="flow">
+<span class="step">Rule 1:</span> Constants defined in <span class="file">config.py</span> are imported everywhere else. Never redefined.
+<span class="step">Rule 2:</span> Prompt strings live in <span class="file">prompts.py</span> only. Imported by explain, generate, guided. Never inline.
+<span class="step">Rule 3:</span> No file imports from <span class="file">server.py</span>. Server imports from everything; nothing imports from server.
+    </div>
+  </section>
+
+
+  <!-- 2. MODULE MAP -->
+  <section class="section" id="modules">
+    <div class="section-header">
+      <span class="section-num">2</span>
+      <h1 class="section-title">Module Map</h1>
+    </div>
+
+    <p>Nine modules plus the server. Each card shows what the file owns, what it is allowed to import, and its category.</p>
+
+    <div class="module-grid">
+
+      <div class="module-card owns-cfg">
+        <div class="module-header">
+          <span class="module-filename">config.py</span>
+          <span class="module-tag tag-cfg">Config</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">All constants: paths, URLs, model names, context window sizes. Single source of truth. No logic, no functions.</div>
+          <div class="imports-row">
+            <span class="imp">os</span>
+            <span class="imp forbidden">nothing from assistant/</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-card owns-data">
+        <div class="module-header">
+          <span class="module-filename">prompts.py</span>
+          <span class="module-tag tag-data">Prompts</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">All system prompt strings: EXPLAIN_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT (includes full inlet/outlet reference table), GUIDED_SYSTEM_PROMPT. No logic, no functions.</div>
+          <div class="imports-row">
+            <span class="imp forbidden">nothing — no imports</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-card owns-io">
+        <div class="module-header">
+          <span class="module-filename">retrieve.py</span>
+          <span class="module-tag tag-io">Retrieval</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">ChromaDB queries. Embedding generation via Ollama. Returns raw document chunks to callers. Manages the ChromaDB client (should be singleton — see §7).</div>
+          <div class="imports-row">
+            <span class="imp allowed">config</span>
+            <span class="imp">chromadb</span>
+            <span class="imp">requests</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-card owns-cfg">
+        <div class="module-header">
+          <span class="module-filename">classify.py</span>
+          <span class="module-tag tag-cfg">Classifier</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">Intent classification only: returns EXPLAIN, GENERATE, or GUIDED for a given query. Single Ollama call, zero temperature. No retrieval, no prompts.</div>
+          <div class="imports-row">
+            <span class="imp allowed">config</span>
+            <span class="imp">requests</span>
+            <span class="imp">json</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-card owns-data">
+        <div class="module-header">
+          <span class="module-filename">explain.py</span>
+          <span class="module-tag tag-llm">LLM · Explain</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">Explain mode inference. Also owns shared utility functions used by generate and guided: <code style="font-family:var(--mono);font-size:10px;color:var(--green)">load_inlet_outlet_index()</code>, <code style="font-family:var(--mono);font-size:10px;color:var(--green)">load_lom_schema()</code>, <code style="font-family:var(--mono);font-size:10px;color:var(--green)">detect_m4l_context()</code>.</div>
+          <div class="imports-row">
+            <span class="imp allowed">config</span>
+            <span class="imp allowed">prompts</span>
+            <span class="imp allowed">retrieve</span>
+            <span class="imp">requests</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-card owns-llm">
+        <div class="module-header">
+          <span class="module-filename">generate.py</span>
+          <span class="module-tag tag-llm">LLM · Generate</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">Patch generation inference. 3-attempt validation loop. M4L device type detection. Example patch loading. Returns structured result dict with valid/patch/errors.</div>
+          <div class="imports-row">
+            <span class="imp allowed">config</span>
+            <span class="imp allowed">prompts</span>
+            <span class="imp allowed">retrieve</span>
+            <span class="imp allowed">explain</span>
+            <span class="imp allowed">validate</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-card owns-val">
+        <div class="module-header">
+          <span class="module-filename">validate.py</span>
+          <span class="module-tag tag-val">Validation</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">All patch validation logic. Pydantic models for .maxpat schema. TRUSTED_PORT_COUNTS table. M4L device checks. Returns {valid, errors, warnings}. Never calls Ollama.</div>
+          <div class="imports-row">
+            <span class="imp allowed">config</span>
+            <span class="imp">pydantic</span>
+            <span class="imp">json</span>
+            <span class="imp forbidden">nothing else from assistant/</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-card owns-llm">
+        <div class="module-header">
+          <span class="module-filename">guided.py</span>
+          <span class="module-tag tag-llm">LLM · Guided</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">Guided build mode. Personal idioms file management (load, append, gitignore check). ENRICHED_USER_TEMPLATE. CLI REPL. WebSocket core logic (shared with server via extraction — see §7).</div>
+          <div class="imports-row">
+            <span class="imp allowed">config</span>
+            <span class="imp allowed">prompts</span>
+            <span class="imp allowed">retrieve</span>
+            <span class="imp allowed">explain</span>
+            <span class="imp allowed">generate</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-card owns-io">
+        <div class="module-header">
+          <span class="module-filename">server.py</span>
+          <span class="module-tag tag-entry">Entry · API</span>
+        </div>
+        <div class="module-body">
+          <div class="owns">Owns</div>
+          <div class="desc">FastAPI app. HTTP and WebSocket endpoints. SSE streaming. Async wrappers (_ollama_post helper). CORS config. Routes requests to explain/generate/guided. Imports from all assistant modules. Nothing imports from server.</div>
+          <div class="imports-row">
+            <span class="imp allowed">config</span>
+            <span class="imp allowed">explain</span>
+            <span class="imp allowed">generate</span>
+            <span class="imp allowed">validate</span>
+            <span class="imp allowed">guided</span>
+            <span class="imp allowed">retrieve</span>
+            <span class="imp">fastapi</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="note"><strong>Note on explain.py utility functions:</strong> <code style="font-family:var(--mono);font-size:11px">load_inlet_outlet_index()</code>, <code style="font-family:var(--mono);font-size:11px">load_lom_schema()</code>, and <code style="font-family:var(--mono);font-size:11px">detect_m4l_context()</code> are shared utilities that currently live in explain.py and are imported by generate.py and guided.py. This is a pragmatic arrangement that works. A future refactor could move them to a dedicated <code style="font-family:var(--mono);font-size:11px">context.py</code> utility module, but do not do this without explicit planning — it requires updating imports in three files.</div>
+  </section>
+
+
+  <!-- 3. OWNERSHIP RULES -->
+  <section class="section" id="ownership">
+    <div class="section-header">
+      <span class="section-num">3</span>
+      <h1 class="section-title">Ownership Rules</h1>
+    </div>
+
+    <p>When adding or changing anything, match it to the file that owns that concern. If you're unsure, use this table.</p>
+
+    <table class="rule-table">
+      <thead>
+        <tr><th>If you need to…</th><th>Touch this file</th><th>Do not touch</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Add or change a model name, URL, path, or context window size</td>
+          <td style="color:var(--green);font-family:var(--mono)">config.py</td>
+          <td>Any other file — import from config instead</td>
+        </tr>
+        <tr>
+          <td>Change how the explain prompt is worded</td>
+          <td style="color:var(--green);font-family:var(--mono)">prompts.py</td>
+          <td>explain.py — it only imports EXPLAIN_SYSTEM_PROMPT</td>
+        </tr>
+        <tr>
+          <td>Add an object to the inlet/outlet reference table</td>
+          <td style="color:var(--green);font-family:var(--mono)">prompts.py</td>
+          <td>validate.py TRUSTED_PORT_COUNTS — keep both in sync if adding a new object</td>
+        </tr>
+        <tr>
+          <td>Change how patches are validated</td>
+          <td style="color:var(--green);font-family:var(--mono)">validate.py</td>
+          <td>generate.py — it only calls validate_patch()</td>
+        </tr>
+        <tr>
+          <td>Change how ChromaDB is queried or embeddings are generated</td>
+          <td style="color:var(--green);font-family:var(--mono)">retrieve.py</td>
+          <td>explain.py / generate.py — they only call query_vector_db()</td>
+        </tr>
+        <tr>
+          <td>Change the generate retry loop or example patch loading</td>
+          <td style="color:var(--green);font-family:var(--mono)">generate.py</td>
+          <td>server.py — server only calls generate_patch()</td>
+        </tr>
+        <tr>
+          <td>Change how personal idioms are read or written</td>
+          <td style="color:var(--green);font-family:var(--mono)">guided.py</td>
+          <td>server.py — server only calls the guided functions</td>
+        </tr>
+        <tr>
+          <td>Change HTTP routes, CORS, or WebSocket handling</td>
+          <td style="color:var(--green);font-family:var(--mono)">server.py</td>
+          <td>Any assistant/ module — they must not know about HTTP</td>
+        </tr>
+        <tr>
+          <td>Change M4L context detection keywords</td>
+          <td style="color:var(--green);font-family:var(--mono)">explain.py</td>
+          <td>server.py / generate.py — both call detect_m4l_context()</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <!-- 4. REQUEST FLOW -->
+  <section class="section" id="flow">
+    <div class="section-header">
+      <span class="section-num">4</span>
+      <h1 class="section-title">Request Flow</h1>
+    </div>
+
+    <h2 class="sub-title">4.1 Explain (Q&A tab)</h2>
+    <div class="flow">
+<span class="step">1</span> <span class="file">server.py</span>  receives POST /explain  <span class="arrow">→</span>  calls explain_query()
+<span class="step">2</span> <span class="file">explain.py</span> calls query_vector_db()  <span class="arrow">→</span>  <span class="file">retrieve.py</span>  returns chunks
+<span class="step">3</span> <span class="file">explain.py</span> calls load_inlet_outlet_index(), detect_m4l_context(), load_lom_schema()
+<span class="step">4</span> <span class="file">explain.py</span> builds user prompt, prepends EXPLAIN_SYSTEM_PROMPT from <span class="file">prompts.py</span>
+<span class="step">5</span> <span class="file">explain.py</span> streams Ollama response  <span class="arrow">→</span>  callback  <span class="arrow">→</span>  <span class="file">server.py</span> SSE to client
+    </div>
+
+    <h2 class="sub-title">4.2 Generate (Patch Generator tab)</h2>
+    <div class="flow">
+<span class="step">1</span> <span class="file">server.py</span>  receives POST /generate  <span class="arrow">→</span>  calls generate_patch()
+<span class="step">2</span> <span class="file">generate.py</span> infers domain, calls query_vector_db()  <span class="arrow">→</span>  <span class="file">retrieve.py</span>
+<span class="step">3</span> <span class="file">generate.py</span> calls load_inlet_outlet_index(), load_lom_schema() (if M4L) from <span class="file">explain.py</span>
+<span class="step">4</span> <span class="file">generate.py</span> builds prompt with GENERATE_SYSTEM_PROMPT from <span class="file">prompts.py</span>
+<span class="note">           └── GENERATE_SYSTEM_PROMPT contains the full 166-object inlet/outlet reference table</span>
+<span class="step">5</span> <span class="file">generate.py</span> calls Ollama  <span class="arrow">→</span>  extracts JSON  <span class="arrow">→</span>  calls validate_patch() in <span class="file">validate.py</span>
+<span class="step">6</span> If invalid: appends errors to chat history, retries (max 3 attempts)
+<span class="step">7</span> Returns {valid, patch, errors, attempts}  <span class="arrow">→</span>  <span class="file">server.py</span>  <span class="arrow">→</span>  client
+    </div>
+
+    <h2 class="sub-title">4.3 Guided Build (WebSocket)</h2>
+    <div class="flow">
+<span class="step">1</span> <span class="file">server.py</span>  opens WebSocket /ws/guided
+<span class="step">2</span> Each turn: server calls run_websocket_learning_stage() or run_websocket_generation_stage()
+<span class="note">           └── These are async wrappers. Blocking Ollama calls use _ollama_post() via run_in_executor</span>
+<span class="step">3</span> <span class="file">guided.py</span> provides GUIDED_SYSTEM_PROMPT, ENRICHED_USER_TEMPLATE, personal idioms
+<span class="step">4</span> On disconnect: stop_event.set() cancels background streaming thread
+<span class="step">5</span> End of session: append_to_personal_idioms() called to persist learnings
+    </div>
+  </section>
+
+
+  <!-- 5. DATA FILES -->
+  <section class="section" id="data">
+    <div class="section-header">
+      <span class="section-num">5</span>
+      <h1 class="section-title">Data Files</h1>
+    </div>
+
+    <p>All data files live under <code style="font-family:var(--mono);font-size:11px;color:var(--green)">data/</code>. Paths are defined in <code style="font-family:var(--mono);font-size:11px;color:var(--green)">config.py</code> and imported — never hardcoded in module files.</p>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>File</th><th>Owned by</th><th>Purpose</th><th>Git</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>chroma/</td>
+          <td>retrieve.py</td>
+          <td>ChromaDB persistent vector store. max8_docs collection (~21,498 chunks).</td>
+          <td style="color:var(--red);font-family:var(--mono);font-size:10px">IGNORED</td>
+        </tr>
+        <tr>
+          <td>inlet_outlet_index.json</td>
+          <td>explain.py (reader)<br>prompts.py (table)</td>
+          <td>Structured object I/O data. Root key: "inlet_outlet_index". Used by load_inlet_outlet_index() for runtime lookup and by GENERATE_SYSTEM_PROMPT as a reference table.</td>
+          <td style="color:var(--red);font-family:var(--mono);font-size:10px">IGNORED</td>
+        </tr>
+        <tr>
+          <td>lom_reference.json</td>
+          <td>explain.py</td>
+          <td>Live Object Model hierarchy. Loaded by load_lom_schema() when M4L context detected.</td>
+          <td style="color:var(--red);font-family:var(--mono);font-size:10px">IGNORED</td>
+        </tr>
+        <tr>
+          <td>personal_idioms.md</td>
+          <td>guided.py</td>
+          <td>User's own naming conventions and patch patterns. Read at session start, appended at end.</td>
+          <td style="color:var(--red);font-family:var(--mono);font-size:10px">IGNORED</td>
+        </tr>
+        <tr>
+          <td>example_patches/max/</td>
+          <td>generate.py</td>
+          <td>Annotated .maxpat examples for Max/MSP generation context.</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">TRACKED</td>
+        </tr>
+        <tr>
+          <td>example_patches/m4l/</td>
+          <td>generate.py</td>
+          <td>Annotated .maxpat examples for M4L generation context, organised by device type.</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">TRACKED</td>
+        </tr>
+        <tr>
+          <td>generated_*.maxpat</td>
+          <td>server.py</td>
+          <td>Output patches from generation sessions.</td>
+          <td style="color:var(--red);font-family:var(--mono);font-size:10px">IGNORED</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="warn"><strong>Important:</strong> When adding new data file paths, define them in <code style="font-family:var(--mono);font-size:11px">config.py</code> first, then import in the module that reads the file. Never use relative path strings like <code style="font-family:var(--mono);font-size:11px">"data/something.json"</code> directly in module files — they break when the script is run from a different working directory.</div>
+  </section>
+
+
+  <!-- 6. FORBIDDEN PATTERNS -->
+  <section class="section" id="forbidden">
+    <div class="section-header">
+      <span class="section-num">6</span>
+      <h1 class="section-title">Forbidden Patterns</h1>
+    </div>
+
+    <p>These patterns caused the bugs found in the June 2026 code review. Do not reintroduce them.</p>
+
+    <table class="rule-table">
+      <thead>
+        <tr><th>Pattern</th><th>Why it's forbidden</th><th>Bug ref</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Calling requests.post() inside async def without run_in_executor</td>
+          <td>Blocks the entire asyncio event loop. No other requests can be handled while Ollama is thinking.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#1</td>
+        </tr>
+        <tr>
+          <td>asyncio.create_task() without await in a fire-and-forget pattern</td>
+          <td>Task may never complete on WebSocket disconnect. Silent data loss.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#2</td>
+        </tr>
+        <tr>
+          <td>Spawning a background thread with no stop event</td>
+          <td>Thread keeps running after WebSocket disconnects, wasting CPU and Ollama resources.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#3</td>
+        </tr>
+        <tr>
+          <td>TEMPLATE.format(…, query=user_input) where user_input is raw</td>
+          <td>Crashes with KeyError if user types { or } in their query. e.g. "how does {dict} work?"</td>
+          <td style="color:var(--red);font-family:var(--mono)">#4</td>
+        </tr>
+        <tr>
+          <td>b.maxclass.endswith("~") to detect DSP objects</td>
+          <td>Misses newobj-wrapped audio objects. Use has_object() which checks both maxclass and text fields.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#5</td>
+        </tr>
+        <tr>
+          <td>chromadb.PersistentClient() inside query functions</td>
+          <td>Creates and tears down the DB client on every query. Use module-level singleton.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#6</td>
+        </tr>
+        <tr>
+          <td>Opening inlet_outlet_index.json inside per-object validation calls</td>
+          <td>File read repeated once per unknown object in the patch. Cache at module load.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#7</td>
+        </tr>
+        <tr>
+          <td>allow_origins=["*"] combined with allow_credentials=True</td>
+          <td>Invalid CORS configuration. Browsers reject it and OWASP flags it as a misconfiguration.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#8</td>
+        </tr>
+        <tr>
+          <td>Defining constants that already exist in config.py</td>
+          <td>Two copies drift apart silently. Import from config instead.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#9</td>
+        </tr>
+        <tr>
+          <td>Hardcoded relative paths like "data/something.json"</td>
+          <td>Breaks when run from any directory other than the repo root.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#10</td>
+        </tr>
+        <tr>
+          <td>sys.path.insert() hacks in module files</td>
+          <td>Fragile import system workaround. Use proper package structure with __init__.py instead.</td>
+          <td style="color:var(--red);font-family:var(--mono)">#11</td>
+        </tr>
+        <tr>
+          <td>Prompt strings defined inline in explain.py / generate.py / guided.py</td>
+          <td>Scatters the prompt surface across files. All prompts live in prompts.py only.</td>
+          <td style="color:var(--amber);font-family:var(--mono)">arch</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <!-- 7. PENDING HOUSEKEEPING -->
+  <section class="section" id="housekeeping">
+    <div class="section-header">
+      <span class="section-num">7</span>
+      <h1 class="section-title">Pending Housekeeping</h1>
+    </div>
+
+    <p>These are known issues that are not urgent but should be resolved before the codebase grows further. Do not conflate them with feature work.</p>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>Item</th><th>What to do</th><th>Risk if ignored</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ChromaDB singleton (#6)</td>
+          <td>Add module-level _chroma_client in retrieve.py with lazy init via _get_client()</td>
+          <td>Performance degrades with query volume</td>
+        </tr>
+        <tr>
+          <td>Index JSON caching (#7)</td>
+          <td>Load inlet_outlet_index.json once at module load in validate.py, cache as module-level dict</td>
+          <td>Repeated disk reads per validation call</td>
+        </tr>
+        <tr>
+          <td>CORS origin (#8)</td>
+          <td>Change allow_origins=["*"] to ["http://localhost:5173"] in server.py</td>
+          <td>Security misconfiguration if ever exposed</td>
+        </tr>
+        <tr>
+          <td>validate.py constants (#9)</td>
+          <td>Remove BASE_DIR and INDEX_PATH from validate.py, import INDEX_PATH from config</td>
+          <td>Two copies of INDEX_PATH will drift</td>
+        </tr>
+        <tr>
+          <td>Hardcoded example patch paths (#10)</td>
+          <td>Replace string literals in generate.py with os.path.join(DATA_DIR, …) using DATA_DIR from config</td>
+          <td>Breaks if run outside repo root</td>
+        </tr>
+        <tr>
+          <td>sys.path.insert hacks (#11)</td>
+          <td>Add assistant/__init__.py, add setup.py or pyproject.toml, pip install -e .</td>
+          <td>Import failures in non-standard environments</td>
+        </tr>
+        <tr>
+          <td>server.py imports GUIDED_SYSTEM_PROMPT from guided</td>
+          <td>Change to: from prompts import GUIDED_SYSTEM_PROMPT directly in server.py</td>
+          <td>Indirect re-export is fragile if guided.py is refactored</td>
+        </tr>
+        <tr>
+          <td>Duplicate logic in guided.py and server.py (#12)</td>
+          <td>Extract shared Ollama call logic into a core function in guided.py, call from both CLI and server wrappers</td>
+          <td>Changes to the learning stage must be made in two places</td>
+        </tr>
+        <tr>
+          <td>Context overflow in guided sessions (#15)</td>
+          <td>Add token count check before building summary prompt. Truncate or summarise earlier turns if over GUIDED_CONTEXT_WINDOW</td>
+          <td>Silent truncation by Ollama on long sessions</td>
+        </tr>
+        <tr>
+          <td>M4L false positives from "device" keyword (#14)</td>
+          <td>Remove "device" from m4l_keywords in explain.py or require "live device" as a phrase</td>
+          <td>Unnecessary LOM schema loading on plain Max queries</td>
+        </tr>
+        <tr>
+          <td>Stale model name in debug print (#13)</td>
+          <td>Replace hardcoded "qwen2.5-coder:14b" string in guided.py:378 with {GENERATE_MODEL}</td>
+          <td>Misleading debug output</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <!-- 8. SESSION CHECKLIST -->
+  <section class="section" id="session">
+    <div class="section-header">
+      <span class="section-num">8</span>
+      <h1 class="section-title">Session Checklist</h1>
+    </div>
+
+    <p>Run through this before and after every development session involving Claude Code or any AI agent.</p>
+
+    <h2 class="sub-title">Before starting</h2>
+    <table class="rule-table">
+      <thead><tr><th>Check</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Read the relevant module card in §2</td><td>Confirms which file owns what you're about to change</td></tr>
+        <tr><td>Check §3 ownership table for your task</td><td>Identifies the correct file before any code is written</td></tr>
+        <tr><td>Check §6 forbidden patterns for your task type</td><td>Prevents reintroducing known bugs</td></tr>
+        <tr><td>Confirm the agent will read the file before touching it</td><td>Prevents blind overwrites</td></tr>
+        <tr><td>Scope the task to one file or one concern</td><td>Keeps diffs readable and reviewable</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="sub-title">Before approving any change</h2>
+    <table class="rule-table">
+      <thead><tr><th>Check</th><th>Command</th></tr></thead>
+      <tbody>
+        <tr><td>Review exactly what changed</td><td><code style="font-family:var(--mono);font-size:11px;color:var(--green)">git diff HEAD</code></td></tr>
+        <tr><td>Confirm no unintended files were touched</td><td><code style="font-family:var(--mono);font-size:11px;color:var(--green)">git diff HEAD --name-only</code></td></tr>
+        <tr><td>Confirm no new constants duplicate config.py</td><td>Grep for BASE_DIR, INDEX_PATH, MODEL names in changed files</td></tr>
+        <tr><td>Confirm no inline prompt strings were introduced</td><td>Grep for triple-quoted strings in explain/generate/guided</td></tr>
+        <tr><td>Confirm no push has happened without approval</td><td>Check git log vs remote</td></tr>
+      </tbody>
+    </table>
+
+    <div class="warn"><strong>No push rule:</strong> The agent must never push to GitHub without explicit approval in chat. If a push happens without approval, run <code style="font-family:var(--mono);font-size:11px">git log origin/main</code> to see what was pushed and assess whether a revert is needed.</div>
+  </section>
+
+
+  <footer>
+    <span class="max-tag" style="margin:0 auto">Max MSP Assistant · Architecture Reference · June 2026 · Read before prompting any agent</span>
+  </footer>
+
+</main>
+
+</body>
+</html>

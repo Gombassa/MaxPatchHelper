@@ -2,9 +2,18 @@ import json
 import os
 from typing import List, Dict, Any, Union, Optional
 from pydantic import BaseModel, Field, ValidationError
+from config import INDEX_PATH
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-INDEX_PATH = os.path.join(BASE_DIR, "data", "inlet_outlet_index.json")
+def _load_index() -> dict:
+    if not os.path.exists(INDEX_PATH):
+        return {}
+    try:
+        with open(INDEX_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f).get("inlet_outlet_index", {})
+    except Exception:
+        return {}
+
+_INDEX_DATA = _load_index()
 
 TRUSTED_PORT_COUNTS = {
     "live.dial": (1, 2),
@@ -57,7 +66,23 @@ VALID_LIVE_OBJECTS = {
     "live.observer",
     "live.object",
     "live.remote~",
-    "live.param~"
+}
+
+INVALID_MAXCLASS_OBJECTS = {
+    "plugout~",
+    "plugin~",
+    "live.path",
+    "live.object",
+    "live.observer",
+    "live.remote~",
+    "live.banks",
+    "cycle~",
+    "dac~",
+    "adc~",
+    "sig~",
+    "*~",
+    "+~",
+    "gain~"
 }
 
 def get_true_ports(maxclass: str, text: Optional[str] = None) -> tuple:
@@ -71,16 +96,9 @@ def get_true_ports(maxclass: str, text: Optional[str] = None) -> tuple:
     if name in TRUSTED_PORT_COUNTS:
         return TRUSTED_PORT_COUNTS[name]
         
-    if not os.path.exists(INDEX_PATH):
-        return None, None
-    try:
-        with open(INDEX_PATH, 'r', encoding='utf-8') as f:
-            index_data = json.load(f).get("inlet_outlet_index", {})
-        if name in index_data:
-            info = index_data[name]
-            return len(info.get("inlets", [])), len(info.get("outlets", []))
-    except Exception:
-        pass
+    if name in _INDEX_DATA:
+        info = _INDEX_DATA[name]
+        return len(info.get("inlets", [])), len(info.get("outlets", []))
     return None, None
 
 class BoxDetails(BaseModel):
@@ -195,6 +213,8 @@ def validate_patch(
     # 6b. Verify box inlet/outlet counts against trusted port counts
     for b in boxes:
         name = b.maxclass
+        if b.maxclass in INVALID_MAXCLASS_OBJECTS:
+            errors.append(f"Box '{b.id}' uses '{b.maxclass}' as maxclass — should be maxclass: newobj with text: '{b.maxclass}'")
         if b.maxclass == "newobj" and b.text:
             parts = b.text.strip().split()
             if parts:
@@ -404,9 +424,16 @@ def validate_patch(
                 errors.append("M4L MIDI Effect must contain a MIDI output object (like 'midiout' or 'noteout').")
 
     elif domain == "msp":
-        # Check if contains audio-rate objects but no outputs
-        has_dsp = any(b.maxclass.endswith("~") for b in boxes)
-        has_audio_out = any(b.maxclass in ["dac~", "ezdac~", "plugout~"] for b in boxes)
+        # Must check both maxclass and newobj text — correctly generated tilde
+        # objects use maxclass: newobj with the object name in the text field.
+        has_dsp = any(
+            b.maxclass.endswith("~") or (
+                b.maxclass == "newobj" and b.text
+                and b.text.strip().split()[0].endswith("~")
+            )
+            for b in boxes
+        )
+        has_audio_out = has_object(["dac~", "ezdac~", "plugout~"])
         if has_dsp and not has_audio_out:
             warnings.append("MSP patch contains audio-rate ('~') objects but no audio output object (like 'dac~' or 'ezdac~').")
             

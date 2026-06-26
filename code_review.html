@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MaxPatchHelper — Code Review</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #c9d1d9;
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 960px; margin: 0 auto; }
+
+    h1 {
+      font-size: 1.8rem;
+      color: #e6edf3;
+      margin-bottom: 0.25rem;
+    }
+    .subtitle {
+      color: #8b949e;
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+    }
+
+    /* Summary table */
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+    .summary-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      text-align: center;
+    }
+    .summary-card .count {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 0.25rem;
+    }
+    .summary-card .label { font-size: 0.8rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; }
+    .sev-bug .count    { color: #f85149; }
+    .sev-perf .count   { color: #d29922; }
+    .sev-sec .count    { color: #e3b341; }
+    .sev-maint .count  { color: #58a6ff; }
+    .sev-minor .count  { color: #3fb950; }
+
+    /* Section headings */
+    h2 {
+      font-size: 1.1rem;
+      color: #e6edf3;
+      margin: 2rem 0 0.75rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #21262d;
+    }
+
+    /* Finding cards */
+    .finding {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-left: 4px solid transparent;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+    }
+    .finding.bug    { border-left-color: #f85149; }
+    .finding.perf   { border-left-color: #d29922; }
+    .finding.sec    { border-left-color: #e3b341; }
+    .finding.maint  { border-left-color: #58a6ff; }
+    .finding.minor  { border-left-color: #3fb950; }
+
+    .finding-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .finding-num {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #8b949e;
+      min-width: 2rem;
+    }
+    .finding-title { font-weight: 600; color: #e6edf3; font-size: 0.95rem; }
+    .finding-file {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: #8b949e;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.15em 0.5em;
+      border-radius: 4px;
+    }
+    .badge.bug    { background: rgba(248,81,73,0.15);  color: #f85149; }
+    .badge.perf   { background: rgba(210,153,34,0.15); color: #d29922; }
+    .badge.sec    { background: rgba(227,179,65,0.15); color: #e3b341; }
+    .badge.maint  { background: rgba(88,166,255,0.15); color: #58a6ff; }
+    .badge.minor  { background: rgba(63,185,80,0.15);  color: #3fb950; }
+
+    .finding p { font-size: 0.9rem; color: #8b949e; margin-bottom: 0.5rem; }
+    .finding p:last-child { margin-bottom: 0; }
+
+    pre {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.8rem;
+      overflow-x: auto;
+      color: #c9d1d9;
+      margin: 0.5rem 0;
+    }
+    code {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.85em;
+      background: #1c2128;
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      color: #e6edf3;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2em 0.6em;
+      border-radius: 4px;
+      float: right;
+      margin-top: 0.1rem;
+    }
+    .status.open   { background: rgba(248,81,73,0.15);  color: #f85149; }
+    .status.fixing { background: rgba(210,153,34,0.15); color: #d29922; }
+    .status.done   { background: rgba(63,185,80,0.15);  color: #3fb950; }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid #21262d;
+      font-size: 0.8rem;
+      color: #484f58;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>MaxPatchHelper — Code Review</h1>
+  <p class="subtitle">Generated 2026-06-26 &nbsp;·&nbsp; 16 findings across 7 files</p>
+
+  <!-- Summary cards -->
+  <div class="summary">
+    <div class="summary-card sev-bug">
+      <div class="count">5</div>
+      <div class="label">Bugs / Crashes</div>
+    </div>
+    <div class="summary-card sev-perf">
+      <div class="count">2</div>
+      <div class="label">Performance</div>
+    </div>
+    <div class="summary-card sev-sec">
+      <div class="count">1</div>
+      <div class="label">Security</div>
+    </div>
+    <div class="summary-card sev-maint">
+      <div class="count">4</div>
+      <div class="label">Maintainability</div>
+    </div>
+    <div class="summary-card sev-minor">
+      <div class="count">4</div>
+      <div class="label">Minor / Quality</div>
+    </div>
+  </div>
+
+  <!-- ── BUGS ─────────────────────────────────────────────────────── -->
+  <h2>Bugs &amp; Crashes</h2>
+
+  <div class="finding bug">
+    <div class="finding-header">
+      <span class="finding-num">#1</span>
+      <span class="badge bug">Bug</span>
+      <span class="finding-title">Blocking <code>requests.post</code> inside <code>async def</code> functions</span>
+      <span class="status done">✓ Fixed</span>
+      <span class="finding-file">server.py : 457–476, 530–544</span>
+    </div>
+    <p>
+      <code>run_websocket_learning_stage</code> and the spec-extraction block in
+      <code>run_websocket_generation_stage</code> call <code>requests.post(…)</code>
+      synchronously inside <code>async def</code> functions. This blocks the entire asyncio
+      event loop — no other requests can be handled while Ollama is thinking.
+    </p>
+    <pre># BAD — freezes the event loop
+async def run_websocket_learning_stage(websocket, session_history):
+    response = requests.post(OLLAMA_CHAT_URL, ...)   # synchronous, blocks loop
+
+# FIX — offload to a thread
+async def run_websocket_learning_stage(websocket, session_history):
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(
+        None, lambda: requests.post(OLLAMA_CHAT_URL, ...)
+    )</pre>
+  </div>
+
+  <div class="finding bug">
+    <div class="finding-header">
+      <span class="finding-num">#2</span>
+      <span class="badge bug">Bug</span>
+      <span class="finding-title">Fire-and-forget task in <code>extract_and_send_spec</code></span>
+      <span class="status done">✓ Fixed</span>
+      <span class="finding-file">server.py : 406–432</span>
+    </div>
+    <p>
+      This sync function calls <code>asyncio.create_task(websocket.send_json(…))</code> and
+      returns immediately. The task may never complete if the connection drops right after.
+      The function should be <code>async def</code> and <code>await</code>ed by the caller.
+    </p>
+    <pre># BAD — unwaited task, invisible on disconnect
+def extract_and_send_spec(websocket, text):
+    asyncio.create_task(websocket.send_json({...}))   # fire and forget
+
+# FIX
+async def extract_and_send_spec(websocket, text):
+    await websocket.send_json({...})</pre>
+  </div>
+
+  <div class="finding bug">
+    <div class="finding-header">
+      <span class="finding-num">#3</span>
+      <span class="badge bug">Bug</span>
+      <span class="finding-title">Background thread leaks on WebSocket disconnect</span>
+      <span class="status done">✓ Fixed</span>
+      <span class="finding-file">server.py : 355–403</span>
+    </div>
+    <p>
+      <code>run_websocket_llm_turn</code> spawns a background thread with no stop event.
+      On <code>WebSocketDisconnect</code>, the outer handler exits but the thread keeps
+      streaming into the queue indefinitely, wasting CPU and Ollama resources.
+      Pass a <code>threading.Event</code> into the thread and check it in the streaming loop.
+    </p>
+  </div>
+
+  <div class="finding bug">
+    <div class="finding-header">
+      <span class="finding-num">#4</span>
+      <span class="badge bug">Bug</span>
+      <span class="finding-title">Format injection via user input (<code>str.format</code> on untrusted strings)</span>
+      <span class="status done">✓ Fixed</span>
+      <span class="finding-file">explain.py : 177 · generate.py : 174 · guided.py : 199</span>
+    </div>
+    <p>
+      All three prompt builders call <code>TEMPLATE.format(…, query=query_text)</code>
+      where <code>query_text</code> is raw user input. If the user types a query containing
+      <code>{</code> or <code>}</code> (e.g. "how does {dict} work?"), Python raises
+      <code>KeyError</code> at runtime and crashes the request.
+    </p>
+    <pre># BAD
+prompt = TEMPLATE.format(query=user_input)   # crashes if input has { or }
+
+# FIX — build the template without the query slot, then concatenate
+prompt = TEMPLATE.format(context=ctx, ...) + f"\nUSER QUERY:\n{user_input}"</pre>
+  </div>
+
+  <div class="finding bug">
+    <div class="finding-header">
+      <span class="finding-num">#5</span>
+      <span class="badge bug">Bug</span>
+      <span class="finding-title">MSP <code>has_dsp</code> check misses <code>newobj</code>-wrapped audio objects</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">validate.py : 426–428</span>
+    </div>
+    <p>
+      <code>has_dsp = any(b.maxclass.endswith("~") for b in boxes)</code> only checks
+      <code>maxclass</code>. A <code>cycle~</code> written as
+      <code>{"maxclass": "newobj", "text": "cycle~"}</code> has <code>maxclass == "newobj"</code>,
+      so <code>.endswith("~")</code> is false. The existing <code>has_object()</code> helper
+      already handles this correctly — use it.
+    </p>
+    <pre># BAD
+has_dsp = any(b.maxclass.endswith("~") for b in boxes)
+
+# FIX — use has_object() which checks both maxclass and newobj text
+has_dsp = has_object(["cycle~", "gain~", "sig~", "filter~", "dac~", "adc~"])</pre>
+  </div>
+
+  <!-- ── PERFORMANCE ─────────────────────────────────────────────── -->
+  <h2>Performance</h2>
+
+  <div class="finding perf">
+    <div class="finding-header">
+      <span class="finding-num">#6</span>
+      <span class="badge perf">Perf</span>
+      <span class="finding-title">New ChromaDB client created on every query</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">retrieve.py : 33</span>
+    </div>
+    <p>
+      <code>chromadb.PersistentClient(path=CHROMA_DB_PATH)</code> is instantiated inside
+      <code>query_vector_db</code>, so every RAG lookup opens the database from disk,
+      initialises WAL, etc. Cache it as a module-level singleton.
+    </p>
+    <pre># BAD — paid on every call
+def query_vector_db(...):
+    chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+
+# FIX — module-level singleton
+_chroma_client = None
+def _get_client():
+    global _chroma_client
+    if _chroma_client is None:
+        _chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+    return _chroma_client</pre>
+  </div>
+
+  <div class="finding perf">
+    <div class="finding-header">
+      <span class="finding-num">#7</span>
+      <span class="badge perf">Perf</span>
+      <span class="finding-title">Inlet/outlet index JSON re-read from disk per object</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">validate.py : 90–99</span>
+    </div>
+    <p>
+      <code>get_true_ports()</code> opens and fully parses <code>inlet_outlet_index.json</code>
+      for every object not in <code>TRUSTED_PORT_COUNTS</code>. A patch with 10 unknown objects
+      triggers 10 file reads of the same file. Cache the parsed dict at module load.
+    </p>
+  </div>
+
+  <!-- ── SECURITY ───────────────────────────────────────────────── -->
+  <h2>Security</h2>
+
+  <div class="finding sec">
+    <div class="finding-header">
+      <span class="finding-num">#8</span>
+      <span class="badge sec">Security</span>
+      <span class="finding-title">CORS wildcard combined with <code>allow_credentials=True</code></span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">server.py : 41–47</span>
+    </div>
+    <p>
+      Browsers reject <code>Access-Control-Allow-Origin: *</code> when credentials are
+      included. This misconfiguration will silently break cookie/auth scenarios and is
+      flagged as a security misconfiguration by OWASP. Restrict the origin to your actual
+      frontend URL or drop <code>allow_credentials</code>.
+    </p>
+    <pre># BAD
+allow_origins=["*"],
+allow_credentials=True,     # invalid combination
+
+# FIX — pin to your dev frontend
+allow_origins=["http://localhost:5173"],
+allow_credentials=True,</pre>
+  </div>
+
+  <!-- ── MAINTAINABILITY ────────────────────────────────────────── -->
+  <h2>Maintainability</h2>
+
+  <div class="finding maint">
+    <div class="finding-header">
+      <span class="finding-num">#9</span>
+      <span class="badge maint">Maint</span>
+      <span class="finding-title"><code>validate.py</code> duplicates <code>BASE_DIR</code> / <code>INDEX_PATH</code> from <code>config.py</code></span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">validate.py : 6–7</span>
+    </div>
+    <p>
+      These constants are already defined in <code>config.py</code>. Importing them keeps
+      a single source of truth and prevents the two copies drifting apart.
+    </p>
+  </div>
+
+  <div class="finding maint">
+    <div class="finding-header">
+      <span class="finding-num">#10</span>
+      <span class="badge maint">Maint</span>
+      <span class="finding-title">Hardcoded relative example-patch paths in <code>generate.py</code></span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">generate.py : 11–12</span>
+    </div>
+    <p>
+      <code>EXAMPLE_MAX_PATCH_PATH = "data/example_patches/…"</code> is relative to the
+      current working directory. It breaks if the script is run from anywhere other than the
+      repo root. Use <code>DATA_DIR</code> from <code>config.py</code>.
+    </p>
+    <pre># BAD
+EXAMPLE_MAX_PATCH_PATH = "data/example_patches/max/sine_generator.json"
+
+# FIX
+from config import DATA_DIR
+EXAMPLE_MAX_PATCH_PATH = os.path.join(DATA_DIR, "example_patches", "max", "sine_generator.json")</pre>
+  </div>
+
+  <div class="finding maint">
+    <div class="finding-header">
+      <span class="finding-num">#11</span>
+      <span class="badge maint">Maint</span>
+      <span class="finding-title"><code>sys.path.insert</code> hacks in every entry point</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">assistant.py · server.py · tests/</span>
+    </div>
+    <p>
+      Every file that imports from <code>assistant/</code> manually injects the path at
+      runtime. The clean fix is to add <code>assistant/__init__.py</code> and install the
+      package in editable mode (<code>pip install -e .</code>), letting Python's import
+      system do its job.
+    </p>
+  </div>
+
+  <div class="finding maint">
+    <div class="finding-header">
+      <span class="finding-num">#12</span>
+      <span class="badge maint">Maint</span>
+      <span class="finding-title">Learning-stage and spec-extraction logic duplicated across CLI and server</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">guided.py : 261–375 · server.py : 434–564</span>
+    </div>
+    <p>
+      <code>run_learning_stage</code> (CLI) and <code>run_websocket_learning_stage</code>
+      (server) are near-identical. Same for spec extraction. Both sets share a prompt and
+      Ollama call but differ only in how output is delivered. Extract the shared Ollama logic
+      into a core function and call it from both wrappers.
+    </p>
+  </div>
+
+  <!-- ── MINOR ──────────────────────────────────────────────────── -->
+  <h2>Minor / Quality</h2>
+
+  <div class="finding minor">
+    <div class="finding-header">
+      <span class="finding-num">#13</span>
+      <span class="badge minor">Minor</span>
+      <span class="finding-title">Stale model name in debug print</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">guided.py : 378</span>
+    </div>
+    <p>
+      Print says <code>qwen2.5-coder:14b</code> but <code>config.py</code> sets
+      <code>GENERATE_MODEL = "qwen2.5-coder:7b"</code>. Replace the string literal with
+      <code>{GENERATE_MODEL}</code>.
+    </p>
+  </div>
+
+  <div class="finding minor">
+    <div class="finding-header">
+      <span class="finding-num">#14</span>
+      <span class="badge minor">Minor</span>
+      <span class="finding-title"><code>"device"</code> keyword causes M4L false positives</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">explain.py : 91</span>
+    </div>
+    <p>
+      <code>"device"</code> is in <code>m4l_keywords</code>, so a question like
+      "what does the <code>device</code> message do?" triggers full LOM schema loading
+      in a plain Max context. Remove it or require a more specific phrase like
+      <code>"live device"</code>.
+    </p>
+  </div>
+
+  <div class="finding minor">
+    <div class="finding-header">
+      <span class="finding-num">#15</span>
+      <span class="badge minor">Minor</span>
+      <span class="finding-title">Context window overflow risk in learning stage</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">guided.py : 279–283 · server.py : 453–455</span>
+    </div>
+    <p>
+      The entire session history is concatenated raw into the summary prompt with no
+      length check. A long session easily overflows <code>GUIDED_CONTEXT_WINDOW = 4096</code>
+      tokens. Truncate or summarise earlier turns before appending.
+    </p>
+  </div>
+
+  <div class="finding minor">
+    <div class="finding-header">
+      <span class="finding-num">#16</span>
+      <span class="badge minor">Minor</span>
+      <span class="finding-title">Busy-poll pattern in SSE and WebSocket token streams</span>
+      <span class="status open">● Open</span>
+      <span class="finding-file">server.py : 155–163, 391–402</span>
+    </div>
+    <p>
+      <code>q.get_nowait()</code> / <code>asyncio.sleep(0.01)</code> polls 100×/second.
+      Switch to <code>asyncio.Queue</code> with <code>await q.get()</code> to yield only
+      when a token actually arrives.
+    </p>
+  </div>
+
+  <footer>MaxPatchHelper code review · Claude Code · 2026-06-26</footer>
+</div>
+</body>
+</html>
