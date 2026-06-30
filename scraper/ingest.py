@@ -1,14 +1,11 @@
 import os
-import sys
 import json
 import uuid
 import argparse
 import requests
 import chromadb
 
-# Add assistant subdirectory to path so config.py is the single source of truth
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assistant"))
-from config import CHUNKS_FILE, CHROMA_DB_PATH, OLLAMA_EMBED_URL, OLLAMA_BATCH_EMBED_URL, EMBED_MODEL
+from assistant.config import CHUNKS_FILE, CHROMA_DB_PATH, OLLAMA_EMBED_URL, OLLAMA_BATCH_EMBED_URL, EMBED_MODEL
 
 
 def get_embedding(text, model=EMBED_MODEL):

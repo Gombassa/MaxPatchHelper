@@ -20,6 +20,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Editable install build artifacts (pip install -e .)
+*.egg-info/
+build/
+
 # IDE and OS files
 .vscode/
 .idea/

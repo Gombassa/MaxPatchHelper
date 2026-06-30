@@ -1,6 +1,6 @@
 import json
 import requests
-from config import OLLAMA_GENERATE_URL, CLASSIFY_MODEL, CLASSIFY_CONTEXT_WINDOW
+from assistant.config import OLLAMA_GENERATE_URL, CLASSIFY_MODEL, CLASSIFY_CONTEXT_WINDOW
 
 CLASSIFIER_PROMPT = """You are an intent classifier for a Max MSP and Max for Live AI assistant.
 Classify the user's query into exactly one of these three categories:

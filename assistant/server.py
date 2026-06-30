@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import asyncio
 import functools
@@ -12,21 +11,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-# Add assistant directory to path if running directly
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from retrieve import query_vector_db
-from explain import explain_query, load_inlet_outlet_index, load_lom_schema, detect_m4l_context
-from generate import generate_patch
-from validate import validate_patch
-from guided import (
+from assistant.retrieve import query_vector_db
+from assistant.explain import explain_query, load_inlet_outlet_index, load_lom_schema, detect_m4l_context
+from assistant.generate import generate_patch
+from assistant.validate import validate_patch
+from assistant.guided import (
     load_personal_idioms,
     check_gitignore_for_idioms,
     append_to_personal_idioms,
     GUIDED_SYSTEM_PROMPT,
     ENRICHED_USER_TEMPLATE
 )
-from config import (
+from assistant.config import (
     OLLAMA_CHAT_URL,
     GUIDED_MODEL,
     GUIDED_CONTEXT_WINDOW,

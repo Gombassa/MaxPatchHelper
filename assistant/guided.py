@@ -3,11 +3,11 @@ import json
 import sys
 import requests
 from typing import List, Dict, Any, Optional
-from retrieve import query_vector_db
-from explain import load_inlet_outlet_index, load_lom_schema, detect_m4l_context
-from generate import generate_patch
-from config import OLLAMA_CHAT_URL, GUIDED_MODEL, GUIDED_CONTEXT_WINDOW, DATA_DIR, GENERATE_MODEL
-from prompts import GUIDED_SYSTEM_PROMPT
+from assistant.retrieve import query_vector_db
+from assistant.explain import load_inlet_outlet_index, load_lom_schema, detect_m4l_context
+from assistant.generate import generate_patch
+from assistant.config import OLLAMA_CHAT_URL, GUIDED_MODEL, GUIDED_CONTEXT_WINDOW, DATA_DIR, GENERATE_MODEL
+from assistant.prompts import GUIDED_SYSTEM_PROMPT
 
 # Path to personal idioms
 IDIOMS_PATH = os.path.join(DATA_DIR, "personal_idioms.md")

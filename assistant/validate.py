@@ -2,7 +2,7 @@ import json
 import os
 from typing import List, Dict, Any, Union, Optional
 from pydantic import BaseModel, Field, ValidationError
-from config import INDEX_PATH
+from assistant.config import INDEX_PATH
 
 def _load_index() -> dict:
     if not os.path.exists(INDEX_PATH):

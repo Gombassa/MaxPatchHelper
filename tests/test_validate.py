@@ -1,11 +1,8 @@
-import sys
 import os
 import json
 import pytest
 
-# Add assistant directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assistant"))
-from validate import validate_patch
+from assistant.validate import validate_patch
 
 def load_example(relative_path):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

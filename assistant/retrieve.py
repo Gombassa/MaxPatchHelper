@@ -3,7 +3,7 @@ import json
 import argparse
 import requests
 import chromadb
-from config import CHROMA_DB_PATH, OLLAMA_EMBED_URL, EMBED_MODEL
+from assistant.config import CHROMA_DB_PATH, OLLAMA_EMBED_URL, EMBED_MODEL
 
 _chroma_client = None
 

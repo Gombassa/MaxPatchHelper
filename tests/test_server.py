@@ -1,14 +1,10 @@
 import os
-import sys
 import json
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-# Add assistant directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assistant"))
-
-from server import app
+from assistant.server import app
 
 client = TestClient(app)
 
@@ -21,7 +17,7 @@ def test_health_check():
     assert "version" in data
     assert "models" in data
 
-@patch("server.query_vector_db")
+@patch("assistant.server.query_vector_db")
 def test_retrieve_endpoint(mock_retrieve):
     """Verify retrieve endpoint calls vector DB helper and returns results."""
     mock_retrieve.return_value = {"documents": [["chunk1", "chunk2"]], "metadatas": [[{"title": "doc1"}, {"title": "doc2"}]]}
@@ -39,7 +35,7 @@ def test_retrieve_endpoint(mock_retrieve):
     assert len(data["documents"][0]) == 2
     mock_retrieve.assert_called_once_with(query_text="cycle~", domain="msp", max_version="8", n_results=2)
 
-@patch("server.validate_patch")
+@patch("assistant.server.validate_patch")
 def test_validate_endpoint(mock_validate):
     """Verify validate endpoint invokes validator and returns result."""
     mock_validate.return_value = {"valid": True, "errors": [], "warnings": [], "domain": "msp", "device_type": "unknown"}
@@ -54,7 +50,7 @@ def test_validate_endpoint(mock_validate):
     assert data["valid"] is True
     mock_validate.assert_called_once_with(patch_data={"patcher": {}}, domain_override="msp", device_type_override=None)
 
-@patch("server.explain_query")
+@patch("assistant.server.explain_query")
 def test_explain_endpoint_streaming(mock_explain):
     """Verify explain endpoint streams SSE tokens successfully."""
     # Define a side_effect to invoke callback with mocked tokens
@@ -82,7 +78,7 @@ def test_explain_endpoint_streaming(mock_explain):
     assert json.loads(lines[0].replace("data: ", "")) == {"token": "Hello "}
     assert json.loads(lines[1].replace("data: ", "")) == {"token": "world"}
 
-@patch("server.generate_patch")
+@patch("assistant.server.generate_patch")
 def test_generate_endpoint_streaming(mock_generate):
     """Verify generate endpoint streams SSE validation attempts, tokens, and final patch successfully."""
     def mock_generate_impl(*args, **kwargs):
@@ -119,7 +115,7 @@ def test_generate_endpoint_streaming(mock_generate):
     assert evt3["type"] == "patch"
     assert evt3["content"] == {"patcher": {}}
 
-@patch("server.load_personal_idioms")
+@patch("assistant.server.load_personal_idioms")
 def test_websocket_guided_initialization(mock_idioms):
     """Verify that WebSocket guided build initializes, sends idioms, and welcomes user."""
     mock_idioms.return_value = "### Lesson 1: Test idiom"
@@ -144,7 +140,7 @@ def test_websocket_guided_initialization(mock_idioms):
 @pytest.mark.anyio
 async def test_generate_cancellation():
     """Verify that client disconnection aborts generation streaming."""
-    from server import generate_max_patch, GenerateRequest
+    from assistant.server import generate_max_patch, GenerateRequest
     req = GenerateRequest(query="sine wave")
     
     # Mock request indicating immediate disconnect
@@ -166,7 +162,7 @@ async def test_generate_cancellation():
 @pytest.mark.anyio
 async def test_explain_cancellation():
     """Verify that client disconnection aborts explanation streaming."""
-    from server import explain_patch_query, ExplainRequest
+    from assistant.server import explain_patch_query, ExplainRequest
     req = ExplainRequest(query="explain cycle~")
     
     # Mock request indicating immediate disconnect

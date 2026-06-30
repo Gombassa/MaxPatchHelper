@@ -4,11 +4,11 @@ import json
 import requests
 import threading
 from typing import Dict, Any, List, Optional
-from retrieve import query_vector_db
-from explain import load_inlet_outlet_index, load_lom_schema, detect_m4l_context
-from validate import validate_patch
-from config import OLLAMA_CHAT_URL, GENERATE_CONTEXT_WINDOW, GENERATE_MODEL, DATA_DIR
-from prompts import GENERATE_SYSTEM_PROMPT
+from assistant.retrieve import query_vector_db
+from assistant.explain import load_inlet_outlet_index, load_lom_schema, detect_m4l_context
+from assistant.validate import validate_patch
+from assistant.config import OLLAMA_CHAT_URL, GENERATE_CONTEXT_WINDOW, GENERATE_MODEL, DATA_DIR
+from assistant.prompts import GENERATE_SYSTEM_PROMPT
 EXAMPLE_MAX_PATCH_PATH = os.path.join(DATA_DIR, "example_patches", "max", "sine_generator.json")
 EXAMPLE_M4L_PATCH_PATH = os.path.join(DATA_DIR, "example_patches", "m4l", "audio_effect_volume.json")
 

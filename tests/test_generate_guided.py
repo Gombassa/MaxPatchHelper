@@ -1,14 +1,10 @@
-import sys
 import os
 import json
 import pytest
 from unittest.mock import patch, mock_open
 
-# Add assistant directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assistant"))
-
-from generate import extract_json_block, load_example_patch
-from guided import check_gitignore_for_idioms, load_personal_idioms
+from assistant.generate import extract_json_block, load_example_patch
+from assistant.guided import check_gitignore_for_idioms, load_personal_idioms
 
 def test_extract_json_block():
     # Test wrapped in markdown json block

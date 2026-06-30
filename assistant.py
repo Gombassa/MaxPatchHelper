@@ -2,13 +2,11 @@ import os
 import sys
 import argparse
 
-# Add assistant subdirectory to path to avoid name conflict with assistant.py
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "assistant"))
-from retrieve import query_vector_db, format_results
-from classify import classify_intent
-from explain import explain_query
-from generate import generate_patch
-from guided import run_guided_build_session
+from assistant.retrieve import query_vector_db, format_results
+from assistant.classify import classify_intent
+from assistant.explain import explain_query
+from assistant.generate import generate_patch
+from assistant.guided import run_guided_build_session
 
 def main():
     parser = argparse.ArgumentParser(description="Max MSP AI Assistant CLI")

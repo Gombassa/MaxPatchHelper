@@ -4,9 +4,9 @@ import json
 import requests
 import re
 import threading
-from retrieve import query_vector_db
-from config import OLLAMA_CHAT_URL, EXPLAIN_MODEL, LOM_REF_PATH, INDEX_PATH, EXPLAIN_CONTEXT_WINDOW
-from prompts import EXPLAIN_SYSTEM_PROMPT
+from assistant.retrieve import query_vector_db
+from assistant.config import OLLAMA_CHAT_URL, EXPLAIN_MODEL, LOM_REF_PATH, INDEX_PATH, EXPLAIN_CONTEXT_WINDOW
+from assistant.prompts import EXPLAIN_SYSTEM_PROMPT
 
 EXPLAIN_PROMPT_TEMPLATE = """{structured_index_text}
 

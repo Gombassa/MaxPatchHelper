@@ -963,8 +963,8 @@
         </tr>
         <tr>
           <td>CORS origin (#8)</td>
-          <td>Change allow_origins=["*"] to ["http://localhost:5173"] in server.py</td>
-          <td>Security misconfiguration if ever exposed</td>
+          <td>allow_origins=["*"] changed to ["http://localhost:5173"] in server.py, matching the Vite dev server's default port (confirmed via ui/vite.config.js and ui/package.json — no port override present).</td>
+          <td>Resolved</td>
         </tr>
         <tr>
           <td>validate.py constants (#9)</td>
@@ -978,8 +978,8 @@
         </tr>
         <tr>
           <td>sys.path.insert hacks (#11)</td>
-          <td>Add assistant/__init__.py, add setup.py or pyproject.toml, pip install -e .</td>
-          <td>Import failures in non-standard environments</td>
+          <td>Resolved: added pyproject.toml (setuptools backend, packages=["assistant"], dependencies read dynamically from requirements.txt) and an empty assistant/__init__.py, then installed via pip install -e . — making assistant a real, globally importable package. All 7 sys.path.insert call sites removed (assistant.py, assistant/server.py, scraper/chunk.py, scraper/ingest.py, tests/test_validate.py, tests/test_server.py, tests/test_generate_guided.py) and all flat intra-package imports across assistant/*.py converted to absolute assistant.X form. The assistant.py / assistant/ name collision was investigated and confirmed safe: Python resolves the directory-package over the same-named root .py file deterministically, and running assistant.py directly bypasses the import-name system entirely (verified by uninstalling the package and running assistant.py --help from an unrelated cwd — it still worked via script-dir auto-path, while scraper/chunk.py correctly failed without the install). README.md now documents pip install -e . as a required setup step; .gitignore updated to exclude the generated *.egg-info/ build artifact.</td>
+          <td>Resolved — repo-wide grep confirms zero remaining sys.path.insert call sites</td>
         </tr>
         <tr>
           <td>server.py imports GUIDED_SYSTEM_PROMPT from guided</td>
@@ -1013,8 +1013,13 @@
         </tr>
         <tr>
           <td>Scraper config duplicated from assistant/config.py</td>
-          <td>scraper/chunk.py and scraper/ingest.py previously redefined RAW_WEB_DIR, RAW_LOCAL_DIR, CHUNKS_FILE, CHROMA_DB_PATH, OLLAMA_* locally — now fixed by importing from config via a sys.path.insert shim. The shim itself should be removed once #11 (package structure) is resolved.</td>
-          <td>Resolved — but currently relies on the same sys.path.insert pattern flagged as forbidden in #11; revisit when #11 is fixed</td>
+          <td>scraper/chunk.py and scraper/ingest.py previously redefined RAW_WEB_DIR, RAW_LOCAL_DIR, CHUNKS_FILE, CHROMA_DB_PATH, OLLAMA_* locally. Fixed in two stages: first by importing from config via a sys.path.insert shim, then — once #11 (package structure) was resolved with pyproject.toml + assistant/__init__.py + pip install -e . — by replacing the shim with a normal <code style="font-family:var(--mono);font-size:11px">from assistant.config import ...</code> import.</td>
+          <td>Resolved — both the duplication and the sys.path.insert shim are gone</td>
+        </tr>
+        <tr>
+          <td>test_validate_sine_generator fails — gain~ flagged as invalid maxclass</td>
+          <td>validate.py's INVALID_MAXCLASS_OBJECTS set (line ~71–86) wrongly includes "gain~" alongside genuinely newobj-only objects (cycle~, dac~, sig~, *~, plugin~, plugout~). Checked the fixture first: data/example_patches/max/sine_generator.json:61 uses <code style="font-family:var(--mono);font-size:11px">"maxclass": "gain~"</code> directly, which is the correct native .maxpat representation — gain~ is a standalone UI slider object (like toggle, number, live.gain~), never typed into a newobj box. So the fixture is not stale. This looks like an overcorrection carried over from the same code path as the earlier plugin~/plugout~ maxclass fix, without accounting for gain~ being a legitimately standalone maxclass. Needs confirmation against real Max patch files before removing "gain~" from INVALID_MAXCLASS_OBJECTS — same class of bug as forbidden pattern #5, but in the opposite direction (over-flagging a valid native object instead of missing a newobj-wrapped one).</td>
+          <td>Blocks validation of any patch using a native gain~ UI slider, including the existing sine-generator fixture/test; could also wrongly steer generate.py's retry loop away from the correct native gain~ form if validator errors are treated as ground truth</td>
         </tr>
       </tbody>
     </table>

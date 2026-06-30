@@ -66,6 +66,9 @@ source .venv/bin/activate
 
 # Install Python requirements
 pip install -r requirements.txt
+
+# Install the project itself in editable mode (required for assistant/* imports to resolve)
+pip install -e .
 ```
 
 #### Running Ingestion (Optional)
