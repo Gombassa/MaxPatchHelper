@@ -654,7 +654,7 @@
         </div>
         <div class="module-body">
           <div class="owns">Owns</div>
-          <div class="desc">Guided build mode. Personal idioms file management (load, append, gitignore check). ENRICHED_USER_TEMPLATE. CLI REPL. WebSocket core logic (shared with server via extraction — see §7).</div>
+          <div class="desc">Guided build mode. Personal idioms file management (load, append, gitignore check). ENRICHED_USER_TEMPLATE. CLI REPL. Owns three transport-agnostic core functions shared with server.py: run_guided_chat_turn() (streaming, callback-based), run_learning_stage_core() (single-shot, returns {summary, saved}), run_spec_extraction_core() (single-shot). These never touch print() or websocket — delivery is the caller's job.</div>
           <div class="imports-row">
             <span class="imp allowed">config</span>
             <span class="imp allowed">prompts</span>
@@ -672,7 +672,7 @@
         </div>
         <div class="module-body">
           <div class="owns">Owns</div>
-          <div class="desc">FastAPI app. HTTP and WebSocket endpoints. SSE streaming. Async wrappers (_ollama_post helper). CORS config. Routes requests to explain/generate/guided. Imports from all assistant modules. Nothing imports from server.</div>
+          <div class="desc">FastAPI app. HTTP and WebSocket endpoints. SSE streaming. CORS pinned to localhost:5173. Routes requests to explain/generate/guided. Thin WebSocket wrappers around guided.py's three core functions (thread+queue for the streaming chat-turn, run_in_executor for the two single-shot calls). Imports from all assistant modules. Nothing imports from server.</div>
           <div class="imports-row">
             <span class="imp allowed">config</span>
             <span class="imp allowed">explain</span>
@@ -741,6 +741,11 @@
           <td>server.py — server only calls the guided functions</td>
         </tr>
         <tr>
+          <td>Change the guided chat-turn, learning-stage, or spec-extraction LLM call logic</td>
+          <td style="color:var(--green);font-family:var(--mono)">guided.py</td>
+          <td>server.py — it only calls run_guided_chat_turn() / run_learning_stage_core() / run_spec_extraction_core() via thin wrappers; these core functions must stay transport-agnostic (no print(), no websocket)</td>
+        </tr>
+        <tr>
           <td>Change HTTP routes, CORS, or WebSocket handling</td>
           <td style="color:var(--green);font-family:var(--mono)">server.py</td>
           <td>Any assistant/ module — they must not know about HTTP</td>
@@ -786,11 +791,13 @@
     <h2 class="sub-title">4.3 Guided Build (WebSocket)</h2>
     <div class="flow">
 <span class="step">1</span> <span class="file">server.py</span>  opens WebSocket /ws/guided
-<span class="step">2</span> Each turn: server calls run_websocket_learning_stage() or run_websocket_generation_stage()
-<span class="note">           └── These are async wrappers. Blocking Ollama calls use _ollama_post() via run_in_executor</span>
-<span class="step">3</span> <span class="file">guided.py</span> provides GUIDED_SYSTEM_PROMPT, ENRICHED_USER_TEMPLATE, personal idioms
-<span class="step">4</span> On disconnect: stop_event.set() cancels background streaming thread
-<span class="step">5</span> End of session: append_to_personal_idioms() called to persist learnings
+<span class="step">2</span> Per-turn chat: <span class="file">server.py</span>::run_websocket_llm_turn spawns a thread running <span class="file">guided.py</span>::run_guided_chat_turn(callback=...)
+<span class="note">           └── Thread relays each token to a queue; async loop polls queue and awaits websocket.send_json per token</span>
+<span class="step">3</span> Learning stage: <span class="file">server.py</span> calls loop.run_in_executor(None, run_learning_stage_core, history)
+<span class="note">           └── Always returns {summary, saved}. Summary is sent unconditionally; save status sent as a separate message</span>
+<span class="step">4</span> Spec extraction: <span class="file">server.py</span> calls loop.run_in_executor(None, run_spec_extraction_core, history)
+<span class="step">5</span> All three core functions live in <span class="file">guided.py</span>, are transport-agnostic, and are called identically by the CLI REPL path (sync, print-based) and the WebSocket path (async, send_json-based) — see §2 module map
+<span class="step">6</span> guided.py provides GUIDED_SYSTEM_PROMPT, GUIDED_LEARNING_SYSTEM_PROMPT, GUIDED_SPEC_EXTRACTION_SYSTEM_PROMPT (all from prompts.py), ENRICHED_USER_TEMPLATE, personal idioms
     </div>
   </section>
 
@@ -944,82 +951,107 @@
       <h1 class="section-title">Pending Housekeeping</h1>
     </div>
 
-    <p>These are known issues that are not urgent but should be resolved before the codebase grows further. Do not conflate them with feature work.</p>
+    <p>This section is split in two. The first table is a record of what's already fixed — kept here so the reasoning and commit references stay attached to the codebase, not buried in chat history. The second table is what's genuinely still open. Don't treat anything in the first table as a live task.</p>
 
+    <h2 class="sub-title">7.1 Resolved</h2>
+    <table class="data-table">
+      <thead>
+        <tr><th>Item</th><th>Fix</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ChromaDB singleton (#6)</td>
+          <td>Module-level <code style="font-family:var(--mono);font-size:11px">_chroma_client</code> in retrieve.py with lazy init via <code style="font-family:var(--mono);font-size:11px">_get_client()</code></td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>Index JSON caching (#7)</td>
+          <td><code style="font-family:var(--mono);font-size:11px">inlet_outlet_index.json</code> loaded once at module load in validate.py into <code style="font-family:var(--mono);font-size:11px">_INDEX_DATA</code></td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>CORS origin (#8)</td>
+          <td><code style="font-family:var(--mono);font-size:11px">allow_origins</code> pinned to <code style="font-family:var(--mono);font-size:11px">["http://localhost:5173"]</code> in server.py</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>validate.py duplicate constants (#9)</td>
+          <td><code style="font-family:var(--mono);font-size:11px">BASE_DIR</code>/<code style="font-family:var(--mono);font-size:11px">INDEX_PATH</code> removed from validate.py, imported from config</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>Hardcoded example patch paths (#10)</td>
+          <td>generate.py uses <code style="font-family:var(--mono);font-size:11px">os.path.join(DATA_DIR, …)</code> from config</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>sys.path.insert hacks (#11)</td>
+          <td>pyproject.toml + empty assistant/__init__.py + pip install -e .; all flat imports converted to from assistant.X import. README updated with the new prerequisite. Naming collision between root assistant.py and the assistant/ package confirmed safe (directory-package resolution is deterministic in CPython).</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>Duplicate logic in guided.py and server.py (#12)</td>
+          <td>Three transport-agnostic core functions extracted to guided.py: run_guided_chat_turn, run_learning_stage_core, run_spec_extraction_core. Also fixed a real behavioral divergence found during the extraction: the WebSocket path used to suppress the learning-stage summary entirely when personal_idioms.md wasn't gitignored; now both paths always show the summary and report save status separately. _ollama_post removed from server.py as dead code once both call sites moved to run_in_executor.</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>server.py imports GUIDED_SYSTEM_PROMPT indirectly via guided</td>
+          <td>Superseded by #12 — server.py's WebSocket functions now call guided.py's core functions directly rather than needing the prompt constants themselves</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>M4L false positives from "device" keyword (#14)</td>
+          <td>"device" removed from m4l_keywords in explain.py; "live device" retained</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>Stale model name in debug print (#13)</td>
+          <td>Hardcoded "qwen2.5-coder:14b" in guided.py replaced with {GENERATE_MODEL}</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>Scraper config duplicated from assistant/config.py</td>
+          <td>scraper/chunk.py and scraper/ingest.py now import RAW_WEB_DIR, RAW_LOCAL_DIR, CHUNKS_FILE, CHROMA_DB_PATH, OLLAMA_* from assistant.config rather than redefining them locally</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 class="sub-title">7.2 Still Open</h2>
     <table class="data-table">
       <thead>
         <tr><th>Item</th><th>What to do</th><th>Risk if ignored</th></tr>
       </thead>
       <tbody>
         <tr>
-          <td>ChromaDB singleton (#6)</td>
-          <td>Add module-level _chroma_client in retrieve.py with lazy init via _get_client()</td>
-          <td>Performance degrades with query volume</td>
-        </tr>
-        <tr>
-          <td>Index JSON caching (#7)</td>
-          <td>Load inlet_outlet_index.json once at module load in validate.py, cache as module-level dict</td>
-          <td>Repeated disk reads per validation call</td>
-        </tr>
-        <tr>
-          <td>CORS origin (#8)</td>
-          <td>allow_origins=["*"] changed to ["http://localhost:5173"] in server.py, matching the Vite dev server's default port (confirmed via ui/vite.config.js and ui/package.json — no port override present).</td>
-          <td>Resolved</td>
-        </tr>
-        <tr>
-          <td>validate.py constants (#9)</td>
-          <td>Remove BASE_DIR and INDEX_PATH from validate.py, import INDEX_PATH from config</td>
-          <td>Two copies of INDEX_PATH will drift</td>
-        </tr>
-        <tr>
-          <td>Hardcoded example patch paths (#10)</td>
-          <td>Replace string literals in generate.py with os.path.join(DATA_DIR, …) using DATA_DIR from config</td>
-          <td>Breaks if run outside repo root</td>
-        </tr>
-        <tr>
-          <td>sys.path.insert hacks (#11)</td>
-          <td>Resolved: added pyproject.toml (setuptools backend, packages=["assistant"], dependencies read dynamically from requirements.txt) and an empty assistant/__init__.py, then installed via pip install -e . — making assistant a real, globally importable package. All 7 sys.path.insert call sites removed (assistant.py, assistant/server.py, scraper/chunk.py, scraper/ingest.py, tests/test_validate.py, tests/test_server.py, tests/test_generate_guided.py) and all flat intra-package imports across assistant/*.py converted to absolute assistant.X form. The assistant.py / assistant/ name collision was investigated and confirmed safe: Python resolves the directory-package over the same-named root .py file deterministically, and running assistant.py directly bypasses the import-name system entirely (verified by uninstalling the package and running assistant.py --help from an unrelated cwd — it still worked via script-dir auto-path, while scraper/chunk.py correctly failed without the install). README.md now documents pip install -e . as a required setup step; .gitignore updated to exclude the generated *.egg-info/ build artifact.</td>
-          <td>Resolved — repo-wide grep confirms zero remaining sys.path.insert call sites</td>
-        </tr>
-        <tr>
-          <td>server.py imports GUIDED_SYSTEM_PROMPT from guided</td>
-          <td>Change to: from prompts import GUIDED_SYSTEM_PROMPT directly in server.py</td>
-          <td>Indirect re-export is fragile if guided.py is refactored</td>
-        </tr>
-        <tr>
-          <td>Duplicate logic in guided.py and server.py (#12)</td>
-          <td>Extract shared Ollama call logic into a core function in guided.py, call from both CLI and server wrappers</td>
-          <td>Changes to the learning stage must be made in two places</td>
-        </tr>
-        <tr>
           <td>Context overflow in guided sessions (#15)</td>
           <td>Add token count check before building summary prompt. Truncate or summarise earlier turns if over GUIDED_CONTEXT_WINDOW</td>
           <td>Silent truncation by Ollama on long sessions</td>
         </tr>
         <tr>
-          <td>M4L false positives from "device" keyword (#14)</td>
-          <td>Remove "device" from m4l_keywords in explain.py or require "live device" as a phrase</td>
-          <td>Unnecessary LOM schema loading on plain Max queries</td>
-        </tr>
-        <tr>
-          <td>Stale model name in debug print (#13)</td>
-          <td>Replace hardcoded "qwen2.5-coder:14b" string in guided.py:378 with {GENERATE_MODEL}</td>
-          <td>Misleading debug output</td>
+          <td>Busy-poll pattern in WebSocket streaming (#16)</td>
+          <td>run_websocket_llm_turn's queue relay loop polls with asyncio.sleep(0.01) — review whether this is wasteful under load or fine at current usage volume</td>
+          <td>Unnecessary CPU wake-ups; likely low-impact at solo-user scale but worth a deliberate decision rather than an accident</td>
         </tr>
         <tr>
           <td>n_results inconsistently hardcoded across files</td>
-          <td>retrieve.py defaults to 5 (barely used). server.py:300 and guided.py:154 hardcode 3. generate.py:92–93 uses 3 for m4l / 2 for non-m4l. Add named constants to config.py (e.g. DEFAULT_N_RESULTS, M4L_N_RESULTS) and reference them at every call site instead of bare literals. Whether 5/3/2 are the right values is a separate retrieval-quality question — fix the inconsistency first, tune the numbers after.</td>
+          <td>retrieve.py defaults to 5 (barely used). server.py and guided.py hardcode 3. generate.py uses 3 for m4l / 2 for non-m4l. Add named constants to config.py (e.g. DEFAULT_N_RESULTS, M4L_N_RESULTS) and reference them at every call site instead of bare literals. Whether 5/3/2 are the right values is a separate retrieval-quality question — fix the inconsistency first, tune the numbers after.</td>
           <td>Retrieval depth changes silently differ by code path; nobody can see or reason about the actual policy in one place</td>
         </tr>
         <tr>
-          <td>Scraper config duplicated from assistant/config.py</td>
-          <td>scraper/chunk.py and scraper/ingest.py previously redefined RAW_WEB_DIR, RAW_LOCAL_DIR, CHUNKS_FILE, CHROMA_DB_PATH, OLLAMA_* locally. Fixed in two stages: first by importing from config via a sys.path.insert shim, then — once #11 (package structure) was resolved with pyproject.toml + assistant/__init__.py + pip install -e . — by replacing the shim with a normal <code style="font-family:var(--mono);font-size:11px">from assistant.config import ...</code> import.</td>
-          <td>Resolved — both the duplication and the sys.path.insert shim are gone</td>
+          <td>gain~ generated with maxclass: "gain~" instead of newobj/text pattern</td>
+          <td>Surfaced by test_validate_sine_generator failing (confirmed pre-existing, not a regression from #11/#12 — see commit history). Same bug class as the earlier plugin~/plugout~ maxclass fix. Check the test fixture first: is the fixture itself using the old/wrong pattern, or is the generator still producing this form for gain~ despite GENERATE_SYSTEM_PROMPT's maxclass rules? If the latter, the object may be missing from the maxclass-rules list in the reference table.</td>
+          <td>M4L/MSP patches using gain~ will fail validation or fail to load in Max</td>
         </tr>
         <tr>
-          <td>test_validate_sine_generator fails — gain~ flagged as invalid maxclass</td>
-          <td>validate.py's INVALID_MAXCLASS_OBJECTS set (line ~71–86) wrongly includes "gain~" alongside genuinely newobj-only objects (cycle~, dac~, sig~, *~, plugin~, plugout~). Checked the fixture first: data/example_patches/max/sine_generator.json:61 uses <code style="font-family:var(--mono);font-size:11px">"maxclass": "gain~"</code> directly, which is the correct native .maxpat representation — gain~ is a standalone UI slider object (like toggle, number, live.gain~), never typed into a newobj box. So the fixture is not stale. This looks like an overcorrection carried over from the same code path as the earlier plugin~/plugout~ maxclass fix, without accounting for gain~ being a legitimately standalone maxclass. Needs confirmation against real Max patch files before removing "gain~" from INVALID_MAXCLASS_OBJECTS — same class of bug as forbidden pattern #5, but in the opposite direction (over-flagging a valid native object instead of missing a newobj-wrapped one).</td>
-          <td>Blocks validation of any patch using a native gain~ UI slider, including the existing sine-generator fixture/test; could also wrongly steer generate.py's retry loop away from the correct native gain~ form if validator errors are treated as ground truth</td>
+          <td>explain.py utility functions live in explain.py, imported by generate.py and guided.py</td>
+          <td>load_inlet_outlet_index(), load_lom_schema(), detect_m4l_context() are shared utilities sitting in a file named for a different concern. A future refactor could move them to a dedicated context.py — do not do this without explicit planning, it touches three files' imports</td>
+          <td>Low — works correctly, just a naming/ownership oddity worth fixing eventually</td>
+        </tr>
+        <tr>
+          <td>GPU/chunk/embedding audit for new hardware</td>
+          <td>Once the GPU upgrade (RTX 3060 12GB) is installed, re-run the chunk size / embedding batch size / context window assumptions empirically rather than trusting the paper numbers. Current values (500 token chunks, 50 overlap, batch_size=50, GENERATE_CONTEXT_WINDOW=8192) were tuned around the GTX 1060 6GB constraint and may have headroom to increase now</td>
+          <td>Leaving conservative settings in place after a hardware upgrade isn't harmful, just leaves performance on the table</td>
         </tr>
       </tbody>
     </table>
