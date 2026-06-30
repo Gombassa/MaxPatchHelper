@@ -1,10 +1,8 @@
 import os
 import json
 import asyncio
-import functools
 import queue
 import threading
-import requests
 from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,15 +15,14 @@ from assistant.generate import generate_patch
 from assistant.validate import validate_patch
 from assistant.guided import (
     load_personal_idioms,
-    check_gitignore_for_idioms,
-    append_to_personal_idioms,
     GUIDED_SYSTEM_PROMPT,
-    ENRICHED_USER_TEMPLATE
+    ENRICHED_USER_TEMPLATE,
+    run_guided_chat_turn,
+    run_learning_stage_core,
+    run_spec_extraction_core
 )
 from assistant.config import (
-    OLLAMA_CHAT_URL,
     GUIDED_MODEL,
-    GUIDED_CONTEXT_WINDOW,
     EXPLAIN_MODEL,
     EXPLAIN_CONTEXT_WINDOW,
     GENERATE_MODEL,
@@ -352,59 +349,32 @@ async def websocket_guided_build(websocket: WebSocket):
 # ----------------------------------------------------
 
 async def run_websocket_llm_turn(websocket: WebSocket, api_messages: List[Dict[str, str]]) -> str:
-    """Invokes LLM for guided build turn, pushing stream tokens to WebSocket."""
+    """Thin WebSocket wrapper: runs the shared chat-turn core in a thread, relays tokens live."""
     q = queue.Queue()
-    stop_event = threading.Event()
 
-    def target(stop_event: threading.Event):
+    def target():
         try:
-            response = requests.post(
-                OLLAMA_CHAT_URL,
-                json={
-                    "model": GUIDED_MODEL,
-                    "messages": api_messages,
-                    "stream": True,
-                    "options": {
-                        "temperature": 0.3,
-                        "num_ctx": GUIDED_CONTEXT_WINDOW
-                    }
-                },
-                stream=True,
-                timeout=300
-            )
-            if response.status_code != 200:
-                q.put(Exception(f"Ollama returned HTTP {response.status_code}"))
-                return
-            for line in response.iter_lines():
-                if stop_event.is_set():
-                    break
-                if line:
-                    chunk = json.loads(line.decode('utf-8'))
-                    token = chunk.get("message", {}).get("content", "")
-                    q.put(token)
+            run_guided_chat_turn(api_messages, callback=lambda token: q.put(token))
         except Exception as e:
             q.put(e)
         finally:
             q.put(None)
 
-    threading.Thread(target=target, args=(stop_event,), daemon=True).start()
+    threading.Thread(target=target, daemon=True).start()
 
     full_response = ""
-    try:
-        while True:
-            try:
-                token = q.get_nowait()
-                if token is None:
-                    break
-                if isinstance(token, Exception):
-                    await websocket.send_json({"type": "error", "content": str(token)})
-                    break
-                full_response += token
-                await websocket.send_json({"type": "token", "content": token})
-            except queue.Empty:
-                await asyncio.sleep(0.01)
-    finally:
-        stop_event.set()
+    while True:
+        try:
+            token = q.get_nowait()
+            if token is None:
+                break
+            if isinstance(token, Exception):
+                await websocket.send_json({"type": "error", "content": str(token)})
+                break
+            full_response += token
+            await websocket.send_json({"type": "token", "content": token})
+        except queue.Empty:
+            await asyncio.sleep(0.01)
 
     return full_response
 
@@ -435,17 +405,9 @@ async def extract_and_send_spec(websocket: WebSocket, text: str):
             "content": spec_content
         })
 
-async def _ollama_post(payload: dict, timeout: int = 300) -> requests.Response:
-    """Run a blocking requests.post to Ollama in a thread so the event loop stays free."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None,
-        functools.partial(requests.post, OLLAMA_CHAT_URL, json=payload, timeout=timeout)
-    )
-
 
 async def run_websocket_learning_stage(websocket: WebSocket, session_history: List[Dict[str, str]]):
-    """Generates idioms summary at the end of the session, appending it to personal_idioms.md."""
+    """WebSocket wrapper: runs the learning-stage core off the event loop and relays the result."""
     if not session_history:
         return
 
@@ -454,65 +416,18 @@ async def run_websocket_learning_stage(websocket: WebSocket, session_history: Li
         "content": "[System] Running end-of-session learning stage. Compiling idioms..."
     })
 
-    summary_prompt = (
-        "Analyze the following conversation history of a patch design session. "
-        "Create a concise, bulleted Markdown summary of the following:\n"
-        "1. What patch was designed/attempted (the core goal).\n"
-        "2. Key design and architectural choices (e.g. object selections, signal flows, parameters, M4L components).\n"
-        "3. Any lessons learned, gotchas, or reusable personal idioms discovered during the session.\n\n"
-        "Keep the summary extremely concise, practical, and under 15 lines of text.\n\n"
-        "Conversation History:\n"
-    )
-    for msg in session_history:
-        role = "User" if msg["role"] == "user" else "Assistant"
-        summary_prompt += f"\n[{role}]: {msg['content']}\n"
-
+    loop = asyncio.get_event_loop()
     try:
-        response = await _ollama_post({
-            "model": GUIDED_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a concise technical summarizer. Output a concise markdown bulleted list of lessons learned, design choices, and personal idioms from the session."
-                },
-                {"role": "user", "content": summary_prompt}
-            ],
-            "stream": False,
-            "options": {
-                "temperature": 0.1,
-                "num_ctx": GUIDED_CONTEXT_WINDOW
-            }
-        })
+        result = await loop.run_in_executor(None, run_learning_stage_core, session_history)
+    except RuntimeError as e:
+        await websocket.send_json({"type": "error", "content": str(e)})
+        return
 
-        if response.status_code == 200:
-            summary_text = response.json().get("message", {}).get("content", "").strip()
-            
-            # Format entry
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            formatted_entry = f"### Session Summary - {timestamp}\n{summary_text}"
-            
-            # Write to idioms
-            if check_gitignore_for_idioms():
-                append_to_personal_idioms(formatted_entry)
-                await websocket.send_json({
-                    "type": "idioms",
-                    "content": formatted_entry
-                })
-            else:
-                await websocket.send_json({
-                    "type": "status",
-                    "content": "[Warning] personal_idioms.md not in .gitignore. Skipping summary write."
-                })
-        else:
-            await websocket.send_json({
-                "type": "error",
-                "content": f"Failed to run summarizer: HTTP {response.status_code}"
-            })
-    except Exception as e:
+    await websocket.send_json({"type": "idioms", "content": result["summary"]})
+    if not result["saved"]:
         await websocket.send_json({
-            "type": "error",
-            "content": f"Error running summarizer: {e}"
+            "type": "status",
+            "content": "[Warning] personal_idioms.md not in .gitignore. Summary was not saved."
         })
 
 async def run_websocket_generation_stage(websocket: WebSocket, session_history: List[Dict[str, str]], domain: str):
@@ -522,51 +437,17 @@ async def run_websocket_generation_stage(websocket: WebSocket, session_history: 
         "content": "[System] Compiling final design specifications..."
     })
 
-    spec_prompt = (
-        "Based on the conversation history below, extract and list the complete final design specifications "
-        "needed to construct the patch. Detail all objects (with names, classes, attributes) and "
-        "all patchline connections between them.\n\n"
-        "Conversation History:\n"
-    )
-    for msg in session_history:
-        role = "User" if msg["role"] == "user" else "Assistant"
-        spec_prompt += f"\n[{role}]: {msg['content']}\n"
-
-    spec_summary = ""
+    loop = asyncio.get_event_loop()
     try:
-        response = await _ollama_post({
-            "model": GUIDED_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a technical analyst. Extract a clear, structured list of objects and connection specifications from the conversation. Do not generate JSON, only a structured text spec list."
-                },
-                {"role": "user", "content": spec_prompt}
-            ],
-            "stream": False,
-            "options": {
-                "temperature": 0.1,
-                "num_ctx": GUIDED_CONTEXT_WINDOW
-            }
-        })
-        if response.status_code == 200:
-            spec_summary = response.json().get("message", {}).get("content", "").strip()
-            await websocket.send_json({
-                "type": "status",
-                "content": f"[System] Design specs compiled:\n{spec_summary}"
-            })
-        else:
-            await websocket.send_json({
-                "type": "error",
-                "content": f"Failed to compile specs: HTTP {response.status_code}"
-            })
-            return
-    except Exception as e:
-        await websocket.send_json({
-            "type": "error",
-            "content": f"Error compiling specs: {e}"
-        })
+        spec_summary = await loop.run_in_executor(None, run_spec_extraction_core, session_history)
+    except RuntimeError as e:
+        await websocket.send_json({"type": "error", "content": str(e)})
         return
+
+    await websocket.send_json({
+        "type": "status",
+        "content": f"[System] Design specs compiled:\n{spec_summary}"
+    })
 
     # Call generate_patch and stream validation loop status
     await websocket.send_json({

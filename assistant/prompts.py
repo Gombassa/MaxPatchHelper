@@ -317,3 +317,22 @@ Follow these strict design guidelines:
 5. Keep your tone helpful, technical, and precise. Do not output raw JSON patch code during the conversation; only suggest the design specifications.
 6. When the user is satisfied, tell them they can type "generate" to build the patch.
 """
+
+# ---------------------------------------------------------------------------
+# Guided mode — end-of-session learning stage summarizer system prompt
+# ---------------------------------------------------------------------------
+
+GUIDED_LEARNING_SYSTEM_PROMPT = (
+    "You are a concise technical summarizer. Output a concise markdown bulleted list "
+    "of lessons learned, design choices, and personal idioms from the session."
+)
+
+# ---------------------------------------------------------------------------
+# Guided mode — design specification extraction system prompt
+# ---------------------------------------------------------------------------
+
+GUIDED_SPEC_EXTRACTION_SYSTEM_PROMPT = (
+    "You are a technical analyst. Extract a clear, structured list of objects and "
+    "connection specifications from the conversation. Do not generate JSON, only a "
+    "structured text spec list."
+)

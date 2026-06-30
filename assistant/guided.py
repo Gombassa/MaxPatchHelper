@@ -2,12 +2,12 @@ import os
 import json
 import sys
 import requests
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from assistant.retrieve import query_vector_db
 from assistant.explain import load_inlet_outlet_index, load_lom_schema, detect_m4l_context
 from assistant.generate import generate_patch
 from assistant.config import OLLAMA_CHAT_URL, GUIDED_MODEL, GUIDED_CONTEXT_WINDOW, DATA_DIR, GENERATE_MODEL
-from assistant.prompts import GUIDED_SYSTEM_PROMPT
+from assistant.prompts import GUIDED_SYSTEM_PROMPT, GUIDED_LEARNING_SYSTEM_PROMPT, GUIDED_SPEC_EXTRACTION_SYSTEM_PROMPT
 
 # Path to personal idioms
 IDIOMS_PATH = os.path.join(DATA_DIR, "personal_idioms.md")
@@ -195,54 +195,72 @@ def run_guided_build_session():
         # 7. Call LLM
         print(f"[Guided] Thinking...")
         try:
-            response = requests.post(
-                OLLAMA_CHAT_URL,
-                json={
-                    "model": GUIDED_MODEL,
-                    "messages": api_messages,
-                    "stream": True,
-                    "options": {
-                        "temperature": 0.3,
-                        "num_ctx": GUIDED_CONTEXT_WINDOW
-                    }
-                },
-                stream=True,
-                timeout=300
-            )
-
-            if response.status_code != 200:
-                print(f"[Guided] Error: Ollama API returned code {response.status_code}: {response.text}")
-                # Remove the user message since we failed to process it
-                session_history.pop()
-                continue
-
-            # Stream response to stdout
-            full_response = ""
-            for line in response.iter_lines():
-                if line:
-                    chunk = json.loads(line.decode('utf-8'))
-                    token = chunk.get("message", {}).get("content", "")
-                    full_response += token
-                    sys.stdout.write(token)
-                    sys.stdout.flush()
+            full_response = run_guided_chat_turn(api_messages, stream_to_stdout=True)
             print()
-
             # Save raw assistant response to persistent history
             session_history.append({"role": "assistant", "content": full_response})
-
-        except Exception as e:
+        except RuntimeError as e:
             print(f"[Guided] Error communicating with Ollama: {e}")
+            # Remove the user message since we failed to process it
             session_history.pop()
 
 
-def run_learning_stage(session_history: List[Dict[str, str]]):
-    """Summarizes progress, architectural choices, and lessons learned, and appends to data/personal_idioms.md."""
-    if not session_history:
-        print("[Guided] No design history to summarize.")
-        return
+def run_guided_chat_turn(
+    api_messages: List[Dict[str, str]],
+    model: str = GUIDED_MODEL,
+    callback: Optional[Callable[[str], None]] = None,
+    stream_to_stdout: bool = False,
+) -> str:
+    """
+    Sends one streaming chat turn to Ollama and returns the full assistant response text.
+    Calls callback(token) for each token received, if callback is provided.
+    Raises RuntimeError if Ollama returns a non-200 response or the request fails.
+    """
+    try:
+        response = requests.post(
+            OLLAMA_CHAT_URL,
+            json={
+                "model": model,
+                "messages": api_messages,
+                "stream": True,
+                "options": {
+                    "temperature": 0.3,
+                    "num_ctx": GUIDED_CONTEXT_WINDOW
+                }
+            },
+            stream=True,
+            timeout=300
+        )
+    except Exception as e:
+        raise RuntimeError(f"Error communicating with Ollama: {e}")
 
-    print("\n--- Running End-of-Session Learning Stage ---")
-    print("[Guided] Compiling personal idioms and architectural lessons learned...")
+    if response.status_code != 200:
+        raise RuntimeError(f"Ollama API returned code {response.status_code}: {response.text}")
+
+    full_response = ""
+    for line in response.iter_lines():
+        if line:
+            chunk = json.loads(line.decode('utf-8'))
+            token = chunk.get("message", {}).get("content", "")
+            full_response += token
+            if callback:
+                callback(token)
+            if stream_to_stdout:
+                sys.stdout.write(token)
+                sys.stdout.flush()
+
+    return full_response
+
+
+def run_learning_stage_core(session_history: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
+    """
+    Summarizes session_history into idioms/lessons text and persists it to personal_idioms.md
+    if .gitignore covers the file. Always returns the summary text regardless of save outcome.
+    Returns {"summary": str, "saved": bool}, or None if session_history is empty.
+    Raises RuntimeError if the Ollama call fails or returns a non-200 response.
+    """
+    if not session_history:
+        return None
 
     summary_prompt = (
         "Analyze the following conversation history of a patch design session. "
@@ -253,7 +271,7 @@ def run_learning_stage(session_history: List[Dict[str, str]]):
         "Keep the summary extremely concise, practical, and under 15 lines of text.\n\n"
         "Conversation History:\n"
     )
-    
+
     # Append session history
     for msg in session_history:
         role = "User" if msg["role"] == "user" else "Assistant"
@@ -265,10 +283,7 @@ def run_learning_stage(session_history: List[Dict[str, str]]):
             json={
                 "model": GUIDED_MODEL,
                 "messages": [
-                    {
-                        "role": "system", 
-                        "content": "You are a concise technical summarizer. Output a concise markdown bulleted list of lessons learned, design choices, and personal idioms from the session."
-                    },
+                    {"role": "system", "content": GUIDED_LEARNING_SYSTEM_PROMPT},
                     {"role": "user", "content": summary_prompt}
                 ],
                 "stream": False,
@@ -279,53 +294,49 @@ def run_learning_stage(session_history: List[Dict[str, str]]):
             },
             timeout=300
         )
-
-        if response.status_code == 200:
-            summary_text = response.json().get("message", {}).get("content", "").strip()
-            print("\nLessons Learned & Idioms Summary:")
-            print("-" * 50)
-            print(summary_text)
-            print("-" * 50)
-            
-            # Format with header and timestamp
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            formatted_entry = f"### Session Summary - {timestamp}\n{summary_text}"
-            
-            # Append to idioms file
-            append_to_personal_idioms(formatted_entry)
-        else:
-            print(f"[Guided] Error during summarization: HTTP {response.status_code}")
     except Exception as e:
-        print(f"[Guided] Failed to compile session summary: {e}")
+        raise RuntimeError(f"Failed to compile session summary: {e}")
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Error during summarization: HTTP {response.status_code}")
+
+    summary_text = response.json().get("message", {}).get("content", "").strip()
+
+    # Format with header and timestamp
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    formatted_entry = f"### Session Summary - {timestamp}\n{summary_text}"
+
+    saved = check_gitignore_for_idioms()
+    if saved:
+        append_to_personal_idioms(formatted_entry)
+
+    return {"summary": summary_text, "saved": saved}
 
 
-def run_generation_stage(session_history: List[Dict[str, str]], domain: str):
-    """Compiles the negotiated design specifications and calls generate_patch to build the .maxpat JSON."""
-    print("\n--- Finalizing Design Specifications ---")
-    
+def run_spec_extraction_core(session_history: List[Dict[str, str]]) -> str:
+    """
+    Extracts a structured design specification from session_history via a single Ollama call.
+    Returns the spec text. Raises RuntimeError if the Ollama call fails or returns a non-200 response.
+    """
     spec_prompt = (
         "Based on the conversation history below, extract and list the complete final design specifications "
         "needed to construct the patch. Detail all objects (with names, classes, attributes) and "
         "all patchline connections between them.\n\n"
         "Conversation History:\n"
     )
-    
+
     for msg in session_history:
         role = "User" if msg["role"] == "user" else "Assistant"
         spec_prompt += f"\n[{role}]: {msg['content']}\n"
 
-    print("[Guided] Extracting design specifications...")
     try:
         response = requests.post(
             OLLAMA_CHAT_URL,
             json={
                 "model": GUIDED_MODEL,
                 "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a technical analyst. Extract a clear, structured list of objects and connection specifications from the conversation. Do not generate JSON, only a structured text spec list."
-                    },
+                    {"role": "system", "content": GUIDED_SPEC_EXTRACTION_SYSTEM_PROMPT},
                     {"role": "user", "content": spec_prompt}
                 ],
                 "stream": False,
@@ -336,20 +347,53 @@ def run_generation_stage(session_history: List[Dict[str, str]], domain: str):
             },
             timeout=300
         )
-
-        if response.status_code != 200:
-            print(f"[Guided] Error extracting specs: HTTP {response.status_code}")
-            return
-
-        spec_summary = response.json().get("message", {}).get("content", "").strip()
-        print("\nExtracted Design Specifications:")
-        print("-" * 50)
-        print(spec_summary)
-        print("-" * 50)
-        
     except Exception as e:
-        print(f"[Guided] Failed to extract specifications: {e}")
+        raise RuntimeError(f"Failed to extract specifications: {e}")
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Error extracting specs: HTTP {response.status_code}")
+
+    return response.json().get("message", {}).get("content", "").strip()
+
+
+def run_learning_stage(session_history: List[Dict[str, str]]):
+    """CLI wrapper: runs the learning-stage core and prints the result."""
+    if not session_history:
+        print("[Guided] No design history to summarize.")
         return
+
+    print("\n--- Running End-of-Session Learning Stage ---")
+    print("[Guided] Compiling personal idioms and architectural lessons learned...")
+
+    try:
+        result = run_learning_stage_core(session_history)
+    except RuntimeError as e:
+        print(f"[Guided] {e}")
+        return
+
+    print("\nLessons Learned & Idioms Summary:")
+    print("-" * 50)
+    print(result["summary"])
+    print("-" * 50)
+    if not result["saved"]:
+        print("[Guided] WARNING: data/personal_idioms.md is not in .gitignore. Summary was not saved.")
+
+
+def run_generation_stage(session_history: List[Dict[str, str]], domain: str):
+    """Compiles the negotiated design specifications and calls generate_patch to build the .maxpat JSON."""
+    print("\n--- Finalizing Design Specifications ---")
+    print("[Guided] Extracting design specifications...")
+
+    try:
+        spec_summary = run_spec_extraction_core(session_history)
+    except RuntimeError as e:
+        print(f"[Guided] {e}")
+        return
+
+    print("\nExtracted Design Specifications:")
+    print("-" * 50)
+    print(spec_summary)
+    print("-" * 50)
 
     # Trigger generation
     print(f"\n[Guided] Starting patch generator using {GENERATE_MODEL} (domain: {domain})...")
