@@ -1006,6 +1006,16 @@
           <td>Replace hardcoded "qwen2.5-coder:14b" string in guided.py:378 with {GENERATE_MODEL}</td>
           <td>Misleading debug output</td>
         </tr>
+        <tr>
+          <td>n_results inconsistently hardcoded across files</td>
+          <td>retrieve.py defaults to 5 (barely used). server.py:300 and guided.py:154 hardcode 3. generate.py:92–93 uses 3 for m4l / 2 for non-m4l. Add named constants to config.py (e.g. DEFAULT_N_RESULTS, M4L_N_RESULTS) and reference them at every call site instead of bare literals. Whether 5/3/2 are the right values is a separate retrieval-quality question — fix the inconsistency first, tune the numbers after.</td>
+          <td>Retrieval depth changes silently differ by code path; nobody can see or reason about the actual policy in one place</td>
+        </tr>
+        <tr>
+          <td>Scraper config duplicated from assistant/config.py</td>
+          <td>scraper/chunk.py and scraper/ingest.py previously redefined RAW_WEB_DIR, RAW_LOCAL_DIR, CHUNKS_FILE, CHROMA_DB_PATH, OLLAMA_* locally — now fixed by importing from config via a sys.path.insert shim. The shim itself should be removed once #11 (package structure) is resolved.</td>
+          <td>Resolved — but currently relies on the same sys.path.insert pattern flagged as forbidden in #11; revisit when #11 is fixed</td>
+        </tr>
       </tbody>
     </table>
   </section>

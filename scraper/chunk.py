@@ -1,12 +1,12 @@
 import os
+import sys
 import json
 import argparse
 import tiktoken
 
-# Folders
-RAW_WEB_DIR = "data/raw/web"
-RAW_LOCAL_DIR = "data/raw/local"
-CHUNKS_FILE = "data/chunks.json"
+# Add assistant subdirectory to path so config.py is the single source of truth
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assistant"))
+from config import RAW_WEB_DIR, RAW_LOCAL_DIR, CHUNKS_FILE
 
 class DocumentChunker:
     def __init__(self, token_limit=500, overlap=50):

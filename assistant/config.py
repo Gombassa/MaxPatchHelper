@@ -11,11 +11,17 @@ CHROMA_DB_PATH = os.path.join(DATA_DIR, "chroma")
 LOM_REF_PATH = os.path.join(DATA_DIR, "lom_reference.json")
 INDEX_PATH = os.path.join(DATA_DIR, "inlet_outlet_index.json")
 
+# Scraper / ingest pipeline
+RAW_WEB_DIR = os.path.join(DATA_DIR, "raw", "web")
+RAW_LOCAL_DIR = os.path.join(DATA_DIR, "raw", "local")
+CHUNKS_FILE = os.path.join(DATA_DIR, "chunks.json")
+
 # Ollama URLs
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
 OLLAMA_EMBED_URL = f"{OLLAMA_BASE_URL}/api/embeddings"
+OLLAMA_BATCH_EMBED_URL = f"{OLLAMA_BASE_URL}/api/embed"
 
 # Models
 CLASSIFY_MODEL = "mistral:latest"
