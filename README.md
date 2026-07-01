@@ -95,9 +95,11 @@ npm install
 
 Configure the application environment variables by creating a `ui/.env` file:
 ```env
-VITE_API_URL=http://127.0.0.1:8000
-VITE_WS_URL=ws://127.0.0.1:8000
+VITE_API_URL=http://localhost:8000/api
+VITE_WS_URL=ws://localhost:8000/api/ws/guided
 ```
+
+Both variables must include the full path prefix (`/api` and `/api/ws/guided` respectively) — `api.js` uses them as complete endpoint URLs, not bare hosts, so these paths aren't optional or freely customizable.
 
 ---
 
