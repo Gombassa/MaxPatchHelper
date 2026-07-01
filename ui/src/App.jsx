@@ -4,13 +4,11 @@ import { api } from './services/api';
 
 // Import Tab Components
 import Explainer from './components/Explainer';
-import Generator from './components/Generator';
-import GuidedBuilder from './components/GuidedBuilder';
 import DocExplorer from './components/DocExplorer';
 import ConnectionBadge from './shared/ConnectionBadge';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('explain'); // 'explain' | 'generate' | 'guided' | 'explore'
+  const [activeTab, setActiveTab] = useState('explain'); // 'explain' | 'explore'
   const [backendStatus, setBackendStatus] = useState('connecting'); // 'connected' | 'connecting' | 'disconnected'
   const [models, setModels] = useState(null);
 
@@ -77,19 +75,7 @@ function App() {
         >
           💬 Q&A Explainer
         </button>
-        <button 
-          className={`tab-btn ${activeTab === 'generate' ? 'active' : ''}`}
-          onClick={() => setActiveTab('generate')}
-        >
-          ⚡ Patch Generator
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'guided' ? 'active' : ''}`}
-          onClick={() => setActiveTab('guided')}
-        >
-          ⚙️ Guided Spec Builder
-        </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'explore' ? 'active' : ''}`}
           onClick={() => setActiveTab('explore')}
         >
@@ -101,12 +87,6 @@ function App() {
       <main className="app-content">
         <div className={`tab-pane ${activeTab === 'explain' ? 'active' : 'hidden'}`}>
           <Explainer />
-        </div>
-        <div className={`tab-pane ${activeTab === 'generate' ? 'active' : 'hidden'}`}>
-          <Generator />
-        </div>
-        <div className={`tab-pane ${activeTab === 'guided' ? 'active' : 'hidden'}`}>
-          <GuidedBuilder />
         </div>
         <div className={`tab-pane ${activeTab === 'explore' ? 'active' : 'hidden'}`}>
           <DocExplorer />

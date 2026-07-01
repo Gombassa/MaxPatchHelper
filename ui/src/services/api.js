@@ -75,90 +75,6 @@ function streamPost(url, body, { onMessage, onError, onDone }) {
   };
 }
 
-/**
- * Connects to the Guided Build WebSocket.
- * Returns send helper methods and a close handler.
- */
-export function connectGuidedWebSocket({ onMessage, onStatusChange }) {
-  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = import.meta.env.VITE_WS_URL || `${wsProtocol}//${window.location.hostname}:8000/api/ws/guided`;
-
-  let socket = null;
-  let reconnectTimeout = null;
-  let isIntentionalClose = false;
-  let retryCount = 0;
-  const maxRetries = 5;
-
-  function connect() {
-    onStatusChange("connecting");
-    socket = new WebSocket(wsUrl);
-
-    socket.onopen = () => {
-      onStatusChange("connected");
-      retryCount = 0;
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        onMessage(data);
-      } catch (e) {
-        console.error("WebSocket message parse error:", e);
-      }
-    };
-
-    socket.onerror = (err) => {
-      console.error("WebSocket error:", err);
-    };
-
-    socket.onclose = () => {
-      if (isIntentionalClose) {
-        onStatusChange("disconnected");
-        return;
-      }
-
-      onStatusChange("disconnected");
-      if (retryCount < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
-        retryCount++;
-        console.warn(`WebSocket disconnected. Reconnecting in ${delay}ms...`);
-        reconnectTimeout = setTimeout(connect, delay);
-      }
-    };
-  }
-
-  connect();
-
-  return {
-    sendChat: (text) => {
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "chat", text }));
-      } else {
-        throw new Error("WebSocket connection is not active");
-      }
-    },
-    sendGenerate: () => {
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "generate" }));
-      } else {
-        throw new Error("WebSocket connection is not active");
-      }
-    },
-    sendExit: () => {
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "exit" }));
-      } else {
-        throw new Error("WebSocket connection is not active");
-      }
-    },
-    close: () => {
-      isIntentionalClose = true;
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (socket) socket.close();
-    }
-  };
-}
-
 export const api = {
   /**
    * Health check endpoint
@@ -200,12 +116,5 @@ export const api = {
    */
   streamExplain({ query, domain = null, version = "8" }, callbacks) {
     return streamPost(`${API_URL}/explain`, { query, domain, version }, callbacks);
-  },
-
-  /**
-   * Generator SSE Stream
-   */
-  streamGenerate({ query, domain = null, version = "8" }, callbacks) {
-    return streamPost(`${API_URL}/generate`, { query, domain, version }, callbacks);
   }
 };
