@@ -26,13 +26,9 @@ OLLAMA_BATCH_EMBED_URL = f"{OLLAMA_BASE_URL}/api/embed"
 # Models
 CLASSIFY_MODEL = "mistral:latest"
 EXPLAIN_MODEL = "mistral:latest"
-GENERATE_MODEL = "qwen2.5-coder:7b"
 EMBED_MODEL = "nomic-embed-text"
-GUIDED_MODEL = "mistral:latest"
 
 # Context Windows (num_ctx)
 CLASSIFY_CONTEXT_WINDOW = 2048
 EXPLAIN_CONTEXT_WINDOW = 4096
-GENERATE_CONTEXT_WINDOW = 8192
-GUIDED_CONTEXT_WINDOW = 4096
 
