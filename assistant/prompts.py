@@ -85,7 +85,7 @@ MAXCLASS RULES:
   midiin, midiout, pitchin
 
 - Use the object's own name as maxclass ONLY for these UI objects:
-  number, number~, toggle, button, slider, dial, message, comment,
+  number, number~, flonum, toggle, button, slider, dial, message, comment,
   multislider, umenu, kslider, textbutton,
   live.dial, live.numbox, live.button, live.slider, live.text,
   live.menu, live.tab, live.thisdevice
@@ -141,6 +141,7 @@ fftin~               1          3
 fftout~              3          0
 filtercoeff~         6          5
 float                2          1
+flonum               2          2
 gain~                3          2
 gate                 2          1
 groove~              4          3
