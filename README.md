@@ -1,20 +1,18 @@
 # Max MSP AI Assistant (MaxPatchHelper)
 
-A local, RAG-enabled AI assistant for Cycling '74 Max MSP (v8) and Max for Live (M4L) that provides interactive explanations, guided build sessions, and automated patch generation with self-correcting validation.
+A local, RAG-enabled AI assistant for Cycling '74 Max MSP (v8) and Max for Live (M4L) that provides interactive explanations and documentation search.
 
 ---
 
 ## Architecture
 
-The Max MSP AI Assistant is structured as a two-tier application consisting of a local FastAPI backend powered by Ollama and a responsive React SPA frontend. At the data layer, a polite web crawler/scraper extracts, chunks, and embeds Cycling '74 legacydocs/API reference pages into a local ChromaDB vector database, which is dynamically augmented by structured static inlet/outlet indexes and a Live Object Model (LOM) schema. The core assistant logic handles query classification (`mistral:latest`), relevant context retrieval, and JSON-based Max patch generation (`qwen2.5-coder:7b`) linked with a multi-step validator checking syntactic validity, port bounds, and signal-rate inlet conflicts. Finally, the FastAPI web server exposes these capabilities through REST endpoints and stateful WebSockets (handling the interactive guided builder loop), bridging the backend services directly to the Vite-powered React frontend.
+The Max MSP AI Assistant is structured as a two-tier application consisting of a local FastAPI backend powered by Ollama and a responsive React SPA frontend. At the data layer, a polite web crawler/scraper extracts, chunks, and embeds Cycling '74 legacy docs/API reference pages into a local ChromaDB vector database, which is dynamically augmented by structured static inlet/outlet indexes and a Live Object Model (LOM) schema. The core assistant logic retrieves relevant context and produces RAG-grounded explanations (`mistral:latest`) of Max/MSP and M4L objects, arguments, attributes, and Live Object Model (LOM) paths. The FastAPI web server exposes this through REST endpoints and an SSE-streamed explain endpoint, bridging the backend directly to the Vite-powered React frontend. The codebase also carries a standalone patch validator (`assistant/validate.py`) and object reference data (`assistant/object_reference.py`) — neither is wired into any active feature today; both are foundation kept in place for a planned future patch-analyzer capability.
 
 ---
 
 ## Features
 
 - **Q&A Explainer**: RAG-augmented explanations of Max MSP objects, arguments, attributes, and Live Object Model (LOM) paths.
-- **Patcher Generator**: Automatically compiles prompt requests into syntactically valid `.maxpat` files. Operates on a 3-attempt self-correction validation loop feeding linter/validation errors back to the generator.
-- **Guided Patcher Builder**: A stateful, multi-turn chat environment stepping users from design requirements, object selections, signal vs. control logic, and inlet/outlet connections.
 - **Documentation Explorer**: Interactive lookup interface for searching and viewing scraped document records and indexes.
 
 ---
@@ -37,11 +35,8 @@ The assistant depends on local models hosted on Ollama. Run the following comman
 # Embeddings model used for RAG retrieval
 ollama pull nomic-embed-text
 
-# LLM used for query classification and explanation
+# LLM used for explanation
 ollama pull mistral
-
-# LLM optimized for patch JSON code generation
-ollama pull qwen2.5-coder:7b
 ```
 
 Ensure Ollama is running in the background (typically at `http://localhost:11434`).
@@ -96,10 +91,9 @@ npm install
 Configure the application environment variables by creating a `ui/.env` file:
 ```env
 VITE_API_URL=http://localhost:8000/api
-VITE_WS_URL=ws://localhost:8000/api/ws/guided
 ```
 
-Both variables must include the full path prefix (`/api` and `/api/ws/guided` respectively) — `api.js` uses them as complete endpoint URLs, not bare hosts, so these paths aren't optional or freely customizable.
+This variable must include the full path prefix (`/api`) — `api.js` uses it as a complete endpoint URL, not a bare host, so this isn't optional or freely customizable. (`VITE_WS_URL` is no longer used — it was only read by the Guided Spec Builder's WebSocket client, which was removed along with that feature.)
 
 ---
 
@@ -117,17 +111,11 @@ python assistant.py --help
 
 # Query Explainer Mode
 python assistant.py --mode explain "how do I use cycle~"
-
-# Generate Patch Mode (Generates and prompts to save .maxpat file)
-python assistant.py --mode generate "a simple FM synthesizer with carrier and modulator"
-
-# Guided Builder Session (Stateful interactive REPL)
-python assistant.py --mode guided
 ```
 
 ### Option B: Web Application (FastAPI + React)
 
-To experience the full UI dashboard with Explainer, Generator, Guided Builder, and Doc Explorer panels, run the backend and frontend servers:
+To experience the full UI dashboard with the Explainer and Doc Explorer panels, run the backend and frontend servers:
 
 1. **Start the FastAPI Backend**:
    From the repository root (with `.venv` active):
@@ -151,8 +139,9 @@ To experience the full UI dashboard with Explainer, Generator, Guided Builder, a
 
 - [assistant.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant.py): Primary command line interface entrypoint.
 - [assistant/config.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/config.py): Global configurations including LLM model settings, paths, and server configurations.
-- [assistant/server.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/server.py): FastAPI backend providing REST endpoints and WebSocket channels.
-- [assistant/validate.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/validate.py): Syntax rules, port restrictions, and connection sanity checks for generated patches.
+- [assistant/server.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/server.py): FastAPI backend providing REST endpoints (health, retrieve, validate, explain). No WebSocket routes remain — the Guided Spec Builder's WebSocket channel was removed along with that feature.
+- [assistant/validate.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/validate.py): Syntax rules, port restrictions, and connection sanity checks for submitted Max patches. Standalone — kept as foundation for a planned future patch-analyzer feature.
+- [assistant/object_reference.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/assistant/object_reference.py): Max object maxclass conventions and fixed inlet/outlet counts. Not yet used by any active feature — prep for the same planned patch-analyzer feature.
 - [scraper/crawl.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/scraper/crawl.py): Web crawler for scraping legacy Cycling '74 documentation and API references.
 - [scraper/ingest.py](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/scraper/ingest.py): Vector embedding generator and ingestion script for ChromaDB.
 - [requirements.txt](file:///c:/Users/robin/Documents/GitHub/MaxPatchHelper/requirements.txt): Python dependency file.

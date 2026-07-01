@@ -517,7 +517,7 @@
 
     <div class="flow">
 <span class="step">Rule 1:</span> Constants defined in <span class="file">config.py</span> are imported everywhere else. Never redefined.
-<span class="step">Rule 2:</span> Prompt strings live in <span class="file">prompts.py</span> only. Imported by explain, generate, guided. Never inline.
+<span class="step">Rule 2:</span> Prompt strings live in <span class="file">prompts.py</span> only. Imported by explain.py. Never inline.
 <span class="step">Rule 3:</span> No file imports from <span class="file">server.py</span>. Server imports from everything; nothing imports from server.
     </div>
   </section>
@@ -530,7 +530,7 @@
       <h1 class="section-title">Module Map</h1>
     </div>
 
-    <p>Nine modules plus the server. Each card shows what the file owns, what it is allowed to import, and its category.</p>
+    <p>Six modules plus the server. Each card shows what the file owns, what it is allowed to import, and its category.</p>
 
     <div class="module-grid">
 
@@ -556,7 +556,7 @@
         </div>
         <div class="module-body">
           <div class="owns">Owns</div>
-          <div class="desc">All system prompt strings: EXPLAIN_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT (includes full inlet/outlet reference table), GUIDED_SYSTEM_PROMPT. No logic, no functions.</div>
+          <div class="desc">All system prompt strings. Only EXPLAIN_SYSTEM_PROMPT remains as of the Patch Generator / Guided Spec Builder removal — see §8 Deprecated Features. GENERATE_SYSTEM_PROMPT and GUIDED_SYSTEM_PROMPT (and its sibling learning/spec-extraction prompts) were deleted along with generate.py/guided.py. The MAXCLASS/inlet-outlet reference table that used to live inside GENERATE_SYSTEM_PROMPT was preserved and moved to object_reference.py rather than deleted. No logic, no functions.</div>
           <div class="imports-row">
             <span class="imp forbidden">nothing — no imports</span>
           </div>
@@ -579,22 +579,6 @@
         </div>
       </div>
 
-      <div class="module-card owns-cfg">
-        <div class="module-header">
-          <span class="module-filename">classify.py</span>
-          <span class="module-tag tag-cfg">Classifier</span>
-        </div>
-        <div class="module-body">
-          <div class="owns">Owns</div>
-          <div class="desc">Intent classification only: returns EXPLAIN, GENERATE, or GUIDED for a given query. Single Ollama call, zero temperature. No retrieval, no prompts.</div>
-          <div class="imports-row">
-            <span class="imp allowed">config</span>
-            <span class="imp">requests</span>
-            <span class="imp">json</span>
-          </div>
-        </div>
-      </div>
-
       <div class="module-card owns-data">
         <div class="module-header">
           <span class="module-filename">explain.py</span>
@@ -602,30 +586,12 @@
         </div>
         <div class="module-body">
           <div class="owns">Owns</div>
-          <div class="desc">Explain mode inference. Also owns shared utility functions used by generate and guided: <code style="font-family:var(--mono);font-size:10px;color:var(--green)">load_inlet_outlet_index()</code>, <code style="font-family:var(--mono);font-size:10px;color:var(--green)">load_lom_schema()</code>, <code style="font-family:var(--mono);font-size:10px;color:var(--green)">detect_m4l_context()</code>.</div>
+          <div class="desc">Explain mode inference — now the only live LLM flow in the app. Also owns <code style="font-family:var(--mono);font-size:10px;color:var(--green)">load_inlet_outlet_index()</code>, <code style="font-family:var(--mono);font-size:10px;color:var(--green)">load_lom_schema()</code>, <code style="font-family:var(--mono);font-size:10px;color:var(--green)">detect_m4l_context()</code>. These used to be shared utilities imported by generate.py and guided.py in addition to explain.py itself. Both of those files are now deleted (§8), so these are called only internally by explain_query() today. server.py still imports all three by name but no longer calls them directly — a dead-import leftover from the removal, tracked as a new item in §7.2, not yet cleaned up.</div>
           <div class="imports-row">
             <span class="imp allowed">config</span>
             <span class="imp allowed">prompts</span>
             <span class="imp allowed">retrieve</span>
             <span class="imp">requests</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="module-card owns-llm">
-        <div class="module-header">
-          <span class="module-filename">generate.py</span>
-          <span class="module-tag tag-llm">LLM · Generate</span>
-        </div>
-        <div class="module-body">
-          <div class="owns">Owns</div>
-          <div class="desc">Patch generation inference. 3-attempt validation loop. M4L device type detection. Example patch loading. Returns structured result dict with valid/patch/errors.</div>
-          <div class="imports-row">
-            <span class="imp allowed">config</span>
-            <span class="imp allowed">prompts</span>
-            <span class="imp allowed">retrieve</span>
-            <span class="imp allowed">explain</span>
-            <span class="imp allowed">validate</span>
           </div>
         </div>
       </div>
@@ -637,7 +603,7 @@
         </div>
         <div class="module-body">
           <div class="owns">Owns</div>
-          <div class="desc">All patch validation logic. Pydantic models for .maxpat schema. TRUSTED_PORT_COUNTS table. M4L device checks. Returns {valid, errors, warnings}. Never calls Ollama.</div>
+          <div class="desc">All patch validation logic. Pydantic models for .maxpat schema. TRUSTED_PORT_COUNTS table. M4L device checks. Returns {valid, errors, warnings}. Never calls Ollama. Confirmed standalone: zero import dependency on generate.py or guided.py, only the reverse (back when they existed). Not wired into any active feature today — reachable only via /api/validate and the test suite — kept intentionally as foundation for a planned future patch-analyzer feature (§8).</div>
           <div class="imports-row">
             <span class="imp allowed">config</span>
             <span class="imp">pydantic</span>
@@ -647,20 +613,16 @@
         </div>
       </div>
 
-      <div class="module-card owns-llm">
+      <div class="module-card owns-val">
         <div class="module-header">
-          <span class="module-filename">guided.py</span>
-          <span class="module-tag tag-llm">LLM · Guided</span>
+          <span class="module-filename">object_reference.py</span>
+          <span class="module-tag tag-val">Reference Data</span>
         </div>
         <div class="module-body">
           <div class="owns">Owns</div>
-          <div class="desc">Guided build mode. Personal idioms file management (load, append, gitignore check). ENRICHED_USER_TEMPLATE. CLI REPL. Owns three transport-agnostic core functions shared with server.py: run_guided_chat_turn() (streaming, callback-based), run_learning_stage_core() (single-shot, returns {summary, saved}), run_spec_extraction_core() (single-shot). These never touch print() or websocket — delivery is the caller's job.</div>
+          <div class="desc">MAX_OBJECT_REFERENCE_TABLE: MAXCLASS conventions and fixed inlet/outlet counts for ~180 Max objects. Moved out of GENERATE_SYSTEM_PROMPT when generate.py/guided.py were removed (§8), rather than deleted, since it's accurate reference data independent of the generation feature. Not imported by anything yet — prep for the same planned patch-analyzer feature as validate.py. One known error was corrected while moving it: gain~ is 2 inlets/2 outlets (was wrongly listed as 3/2) — see the module docstring for the docs.cycling74.com citation. validate.py's own TRUSTED_PORT_COUNTS["gain~"] = (1, 2) is separately still wrong and remains an open follow-up (§7.2).</div>
           <div class="imports-row">
-            <span class="imp allowed">config</span>
-            <span class="imp allowed">prompts</span>
-            <span class="imp allowed">retrieve</span>
-            <span class="imp allowed">explain</span>
-            <span class="imp allowed">generate</span>
+            <span class="imp forbidden">nothing — no imports</span>
           </div>
         </div>
       </div>
@@ -672,13 +634,11 @@
         </div>
         <div class="module-body">
           <div class="owns">Owns</div>
-          <div class="desc">FastAPI app. HTTP and WebSocket endpoints. SSE streaming. CORS pinned to localhost:5173. Routes requests to explain/generate/guided. Thin WebSocket wrappers around guided.py's three core functions (thread+queue for the streaming chat-turn, run_in_executor for the two single-shot calls). Imports from all assistant modules. Nothing imports from server.</div>
+          <div class="desc">FastAPI app. HTTP endpoints only — no WebSocket routes remain (guided's was the only one; removed along with /api/generate in the Patch Generator / Guided Spec Builder removal, §8). CORS pinned to localhost:5173. Routes: /api/health, /api/retrieve, /api/validate, /api/explain (SSE). Imports from explain, validate, retrieve, config. Nothing imports from server.</div>
           <div class="imports-row">
             <span class="imp allowed">config</span>
             <span class="imp allowed">explain</span>
-            <span class="imp allowed">generate</span>
             <span class="imp allowed">validate</span>
-            <span class="imp allowed">guided</span>
             <span class="imp allowed">retrieve</span>
             <span class="imp">fastapi</span>
           </div>
@@ -687,7 +647,7 @@
 
     </div>
 
-    <div class="note"><strong>Note on explain.py utility functions:</strong> <code style="font-family:var(--mono);font-size:11px">load_inlet_outlet_index()</code>, <code style="font-family:var(--mono);font-size:11px">load_lom_schema()</code>, and <code style="font-family:var(--mono);font-size:11px">detect_m4l_context()</code> are shared utilities that currently live in explain.py and are imported by generate.py and guided.py. This is a pragmatic arrangement that works. A future refactor could move them to a dedicated <code style="font-family:var(--mono);font-size:11px">context.py</code> utility module, but do not do this without explicit planning — it requires updating imports in three files.</div>
+    <div class="note"><strong>Note on explain.py utility functions:</strong> <code style="font-family:var(--mono);font-size:11px">load_inlet_outlet_index()</code>, <code style="font-family:var(--mono);font-size:11px">load_lom_schema()</code>, and <code style="font-family:var(--mono);font-size:11px">detect_m4l_context()</code> used to be shared utilities imported by generate.py and guided.py in addition to explain.py itself. Both of those files are now deleted (§8), so the original "move to a dedicated context.py" concern — updating imports across three files — no longer applies; these functions have exactly one real consumer (explain.py) today. The old suggestion is retired, not carried forward as an open item.</div>
   </section>
 
 
@@ -717,43 +677,28 @@
         </tr>
         <tr>
           <td>Add an object to the inlet/outlet reference table</td>
-          <td style="color:var(--green);font-family:var(--mono)">prompts.py</td>
-          <td>validate.py TRUSTED_PORT_COUNTS — keep both in sync if adding a new object</td>
+          <td style="color:var(--green);font-family:var(--mono)">object_reference.py</td>
+          <td>validate.py TRUSTED_PORT_COUNTS — keep both in sync if adding a new object. They're already known to diverge on gain~ (§7.2) — don't assume they currently agree before editing either one</td>
         </tr>
         <tr>
           <td>Change how patches are validated</td>
           <td style="color:var(--green);font-family:var(--mono)">validate.py</td>
-          <td>generate.py — it only calls validate_patch()</td>
+          <td>Nothing currently calls validate_patch() in production code — only /api/validate and the test suite reach it (generate.py, its only other caller, is deleted)</td>
         </tr>
         <tr>
           <td>Change how ChromaDB is queried or embeddings are generated</td>
           <td style="color:var(--green);font-family:var(--mono)">retrieve.py</td>
-          <td>explain.py / generate.py — they only call query_vector_db()</td>
+          <td>explain.py — it only calls query_vector_db()</td>
         </tr>
         <tr>
-          <td>Change the generate retry loop or example patch loading</td>
-          <td style="color:var(--green);font-family:var(--mono)">generate.py</td>
-          <td>server.py — server only calls generate_patch()</td>
-        </tr>
-        <tr>
-          <td>Change how personal idioms are read or written</td>
-          <td style="color:var(--green);font-family:var(--mono)">guided.py</td>
-          <td>server.py — server only calls the guided functions</td>
-        </tr>
-        <tr>
-          <td>Change the guided chat-turn, learning-stage, or spec-extraction LLM call logic</td>
-          <td style="color:var(--green);font-family:var(--mono)">guided.py</td>
-          <td>server.py — it only calls run_guided_chat_turn() / run_learning_stage_core() / run_spec_extraction_core() via thin wrappers; these core functions must stay transport-agnostic (no print(), no websocket)</td>
-        </tr>
-        <tr>
-          <td>Change HTTP routes, CORS, or WebSocket handling</td>
+          <td>Change HTTP routes or CORS</td>
           <td style="color:var(--green);font-family:var(--mono)">server.py</td>
-          <td>Any assistant/ module — they must not know about HTTP</td>
+          <td>Any assistant/ module — they must not know about HTTP. No WebSocket routes remain to worry about (§8)</td>
         </tr>
         <tr>
           <td>Change M4L context detection keywords</td>
           <td style="color:var(--green);font-family:var(--mono)">explain.py</td>
-          <td>server.py / generate.py — both call detect_m4l_context()</td>
+          <td>Nothing external calls detect_m4l_context() directly anymore — it's used only inside explain_query(). server.py still imports it but doesn't call it (dead import, §7.2)</td>
         </tr>
       </tbody>
     </table>
@@ -774,30 +719,7 @@
 <span class="step">3</span> <span class="file">explain.py</span> calls load_inlet_outlet_index(), detect_m4l_context(), load_lom_schema()
 <span class="step">4</span> <span class="file">explain.py</span> builds user prompt, prepends EXPLAIN_SYSTEM_PROMPT from <span class="file">prompts.py</span>
 <span class="step">5</span> <span class="file">explain.py</span> streams Ollama response  <span class="arrow">→</span>  callback  <span class="arrow">→</span>  <span class="file">server.py</span> SSE to client
-    </div>
-
-    <h2 class="sub-title">4.2 Generate (Patch Generator tab)</h2>
-    <div class="flow">
-<span class="step">1</span> <span class="file">server.py</span>  receives POST /generate  <span class="arrow">→</span>  calls generate_patch()
-<span class="step">2</span> <span class="file">generate.py</span> infers domain, calls query_vector_db()  <span class="arrow">→</span>  <span class="file">retrieve.py</span>
-<span class="step">3</span> <span class="file">generate.py</span> calls load_inlet_outlet_index(), load_lom_schema() (if M4L) from <span class="file">explain.py</span>
-<span class="step">4</span> <span class="file">generate.py</span> builds prompt with GENERATE_SYSTEM_PROMPT from <span class="file">prompts.py</span>
-<span class="note">           └── GENERATE_SYSTEM_PROMPT contains the full 166-object inlet/outlet reference table</span>
-<span class="step">5</span> <span class="file">generate.py</span> calls Ollama  <span class="arrow">→</span>  extracts JSON  <span class="arrow">→</span>  calls validate_patch() in <span class="file">validate.py</span>
-<span class="step">6</span> If invalid: appends errors to chat history, retries (max 3 attempts)
-<span class="step">7</span> Returns {valid, patch, errors, attempts}  <span class="arrow">→</span>  <span class="file">server.py</span>  <span class="arrow">→</span>  client
-    </div>
-
-    <h2 class="sub-title">4.3 Guided Build (WebSocket)</h2>
-    <div class="flow">
-<span class="step">1</span> <span class="file">server.py</span>  opens WebSocket /ws/guided
-<span class="step">2</span> Per-turn chat: <span class="file">server.py</span>::run_websocket_llm_turn spawns a thread running <span class="file">guided.py</span>::run_guided_chat_turn(callback=...)
-<span class="note">           └── Thread relays each token to a queue; async loop polls queue and awaits websocket.send_json per token</span>
-<span class="step">3</span> Learning stage: <span class="file">server.py</span> calls loop.run_in_executor(None, run_learning_stage_core, history)
-<span class="note">           └── Always returns {summary, saved}. Summary is sent unconditionally; save status sent as a separate message</span>
-<span class="step">4</span> Spec extraction: <span class="file">server.py</span> calls loop.run_in_executor(None, run_spec_extraction_core, history)
-<span class="step">5</span> All three core functions live in <span class="file">guided.py</span>, are transport-agnostic, and are called identically by the CLI REPL path (sync, print-based) and the WebSocket path (async, send_json-based) — see §2 module map
-<span class="step">6</span> guided.py provides GUIDED_SYSTEM_PROMPT, GUIDED_LEARNING_SYSTEM_PROMPT, GUIDED_SPEC_EXTRACTION_SYSTEM_PROMPT (all from prompts.py), ENRICHED_USER_TEMPLATE, personal idioms
+<span class="note">           └── This is now the only live request flow in the app — Generate and Guided Build flows were removed; see §8 Deprecated Features</span>
     </div>
   </section>
 
@@ -824,8 +746,8 @@
         </tr>
         <tr>
           <td>inlet_outlet_index.json</td>
-          <td>explain.py (reader)<br>prompts.py (table)</td>
-          <td>Structured object I/O data. Root key: "inlet_outlet_index". Used by load_inlet_outlet_index() for runtime lookup and by GENERATE_SYSTEM_PROMPT as a reference table.</td>
+          <td>explain.py (reader)</td>
+          <td>Structured object I/O data. Root key: "inlet_outlet_index". Used by load_inlet_outlet_index() for runtime lookup. No longer feeds a prompt-embedded table — the static MAXCLASS/inlet-outlet reference table lives in object_reference.py now, not read from this file.</td>
           <td style="color:var(--red);font-family:var(--mono);font-size:10px">IGNORED</td>
         </tr>
         <tr>
@@ -836,26 +758,26 @@
         </tr>
         <tr>
           <td>personal_idioms.md</td>
-          <td>guided.py</td>
-          <td>User's own naming conventions and patch patterns. Read at session start, appended at end.</td>
+          <td style="color:var(--amber);font-family:var(--mono);font-size:10px">ORPHANED</td>
+          <td>User's own naming conventions and patch patterns, previously read at guided-session start and appended at end. guided.py — its only owner — is deleted (§8). The file itself is not deleted and no code currently reads or writes it; left as-is pending a decision on whether to archive or remove it.</td>
           <td style="color:var(--red);font-family:var(--mono);font-size:10px">IGNORED</td>
         </tr>
         <tr>
           <td>example_patches/max/</td>
-          <td>generate.py</td>
-          <td>Annotated .maxpat examples for Max/MSP generation context.</td>
+          <td style="color:var(--amber);font-family:var(--mono);font-size:10px">REPURPOSED</td>
+          <td>sine_generator.json is no longer loaded by generate.py (deleted, §8) — it's now an active fixture loaded directly by test_validate.py::test_validate_sine_generator via load_example(), independent of the old generation feature.</td>
           <td style="color:var(--green);font-family:var(--mono);font-size:10px">TRACKED</td>
         </tr>
         <tr>
           <td>example_patches/m4l/</td>
-          <td>generate.py</td>
-          <td>Annotated .maxpat examples for M4L generation context, organised by device type.</td>
+          <td style="color:var(--amber);font-family:var(--mono);font-size:10px">REPURPOSED</td>
+          <td>audio_effect_volume.json is no longer loaded by generate.py (deleted, §8) — it's now an active fixture loaded directly by test_validate.py::test_validate_audio_effect_volume via load_example(), independent of the old generation feature.</td>
           <td style="color:var(--green);font-family:var(--mono);font-size:10px">TRACKED</td>
         </tr>
         <tr>
           <td>generated_*.maxpat</td>
-          <td>server.py</td>
-          <td>Output patches from generation sessions.</td>
+          <td style="color:var(--amber);font-family:var(--mono);font-size:10px">DEFUNCT</td>
+          <td>Output patches from generation sessions. Nothing produces these anymore — generate.py, the CLI's --mode generate, and guided.py's save-patch flow are all deleted (§8).</td>
           <td style="color:var(--red);font-family:var(--mono);font-size:10px">IGNORED</td>
         </tr>
       </tbody>
@@ -935,7 +857,7 @@
           <td style="color:var(--red);font-family:var(--mono)">#11</td>
         </tr>
         <tr>
-          <td>Prompt strings defined inline in explain.py / generate.py / guided.py</td>
+          <td>Prompt strings defined inline in explain.py or any other assistant/ module</td>
           <td>Scatters the prompt surface across files. All prompts live in prompts.py only.</td>
           <td style="color:var(--amber);font-family:var(--mono)">arch</td>
         </tr>
@@ -951,7 +873,7 @@
       <h1 class="section-title">Pending Housekeeping</h1>
     </div>
 
-    <p>This section is split in two. The first table is a record of what's already fixed — kept here so the reasoning and commit references stay attached to the codebase, not buried in chat history. The second table is what's genuinely still open. Don't treat anything in the first table as a live task.</p>
+    <p>This section is split in two. The first table is a record of what's already fixed — kept here so the reasoning and commit references stay attached to the codebase, not buried in chat history. The second table is what's genuinely still open. Don't treat anything in the first table as a live task. Several entries in 7.1 reference generate.py or guided.py, both deleted in the Patch Generator / Guided Spec Builder removal (§8) — they remain here as historical record of fixes that were correct and shipped at the time, not as pointers to live code.</p>
 
     <h2 class="sub-title">7.1 Resolved</h2>
     <table class="data-table">
@@ -1014,6 +936,21 @@
           <td>scraper/chunk.py and scraper/ingest.py now import RAW_WEB_DIR, RAW_LOCAL_DIR, CHUNKS_FILE, CHROMA_DB_PATH, OLLAMA_* from assistant.config rather than redefining them locally</td>
           <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
         </tr>
+        <tr>
+          <td>gain~ fixture using bare maxclass instead of newobj/text pattern</td>
+          <td>Root cause found: data/example_patches/max/sine_generator.json's obj-4 box used "maxclass": "gain~" directly — a stale fixture bug, not a generator or prompt-rules problem. Fixed the fixture; confirmed via test_validate_sine_generator and the full suite passing (20/20 at the time)</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE</td>
+        </tr>
+        <tr>
+          <td>explain.py utility functions "shared ownership" question</td>
+          <td>Resolved by removal, not refactor — generate.py and guided.py (the other two consumers of load_inlet_outlet_index()/load_lom_schema()/detect_m4l_context()) are deleted, eliminating the multi-file import complexity the original concern was about</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE (by removal)</td>
+        </tr>
+        <tr>
+          <td>Context overflow in guided sessions (#15)</td>
+          <td>Resolved by removal — guided.py, the only file this applied to, is deleted</td>
+          <td style="color:var(--green);font-family:var(--mono);font-size:10px">DONE (by removal)</td>
+        </tr>
       </tbody>
     </table>
 
@@ -1024,33 +961,28 @@
       </thead>
       <tbody>
         <tr>
-          <td>Context overflow in guided sessions (#15)</td>
-          <td>Add token count check before building summary prompt. Truncate or summarise earlier turns if over GUIDED_CONTEXT_WINDOW</td>
-          <td>Silent truncation by Ollama on long sessions</td>
-        </tr>
-        <tr>
-          <td>Busy-poll pattern in WebSocket streaming (#16)</td>
-          <td>run_websocket_llm_turn's queue relay loop polls with asyncio.sleep(0.01) — review whether this is wasteful under load or fine at current usage volume</td>
+          <td>Busy-poll pattern in SSE streaming (#16)</td>
+          <td>The guided WebSocket handler this item originally described is deleted, but the same asyncio.sleep(0.01) queue-poll pattern still lives in server.py's /api/explain SSE generator — review whether it's wasteful under load or fine at current usage volume</td>
           <td>Unnecessary CPU wake-ups; likely low-impact at solo-user scale but worth a deliberate decision rather than an accident</td>
         </tr>
         <tr>
           <td>n_results inconsistently hardcoded across files</td>
-          <td>retrieve.py defaults to 5 (barely used). server.py and guided.py hardcode 3. generate.py uses 3 for m4l / 2 for non-m4l. Add named constants to config.py (e.g. DEFAULT_N_RESULTS, M4L_N_RESULTS) and reference them at every call site instead of bare literals. Whether 5/3/2 are the right values is a separate retrieval-quality question — fix the inconsistency first, tune the numbers after.</td>
+          <td>retrieve.py defaults to 5 (barely used). server.py's /api/explain hardcodes 3. The generate.py (3/2 split) and guided.py (3) hardcodes are gone with those files, but the retrieve.py/server.py inconsistency remains. Add a named constant to config.py (e.g. DEFAULT_N_RESULTS) and reference it instead of the bare literal.</td>
           <td>Retrieval depth changes silently differ by code path; nobody can see or reason about the actual policy in one place</td>
         </tr>
         <tr>
-          <td>gain~ generated with maxclass: "gain~" instead of newobj/text pattern</td>
-          <td>Surfaced by test_validate_sine_generator failing (confirmed pre-existing, not a regression from #11/#12 — see commit history). Same bug class as the earlier plugin~/plugout~ maxclass fix. Check the test fixture first: is the fixture itself using the old/wrong pattern, or is the generator still producing this form for gain~ despite GENERATE_SYSTEM_PROMPT's maxclass rules? If the latter, the object may be missing from the maxclass-rules list in the reference table.</td>
-          <td>M4L/MSP patches using gain~ will fail validation or fail to load in Max</td>
+          <td>validate.py TRUSTED_PORT_COUNTS["gain~"] = (1, 2) is wrong</td>
+          <td>Per docs.cycling74.com/legacy/max8/refpages/gain~, the correct default is 2 inlets / 2 outlets. object_reference.py's copy of this data was corrected during its move out of GENERATE_SYSTEM_PROMPT (§2), but validate.py's original was deliberately left untouched per explicit scope that session — this is the follow-up</td>
+          <td>validate_patch() will wrongly flag/pass gain~ boxes on real inlet/outlet count until fixed</td>
         </tr>
         <tr>
-          <td>explain.py utility functions live in explain.py, imported by generate.py and guided.py</td>
-          <td>load_inlet_outlet_index(), load_lom_schema(), detect_m4l_context() are shared utilities sitting in a file named for a different concern. A future refactor could move them to a dedicated context.py — do not do this without explicit planning, it touches three files' imports</td>
-          <td>Low — works correctly, just a naming/ownership oddity worth fixing eventually</td>
+          <td>server.py imports load_inlet_outlet_index, load_lom_schema, detect_m4l_context but never calls them directly</td>
+          <td>Leftover from the Patch Generator / Guided Spec Builder removal (§8) — these were called by the deleted guided WebSocket handler. explain_query() still uses all three internally, so removing the dead import line in server.py is a one-line cleanup, not a functional change. Not fixed in the docs-update pass that surfaced it — flagged as follow-up only</td>
+          <td>None functionally — dead import only, but leaves the module map inaccurate if left implied as "still wired through server.py"</td>
         </tr>
         <tr>
           <td>GPU/chunk/embedding audit for new hardware</td>
-          <td>Once the GPU upgrade (RTX 3060 12GB) is installed, re-run the chunk size / embedding batch size / context window assumptions empirically rather than trusting the paper numbers. Current values (500 token chunks, 50 overlap, batch_size=50, GENERATE_CONTEXT_WINDOW=8192) were tuned around the GTX 1060 6GB constraint and may have headroom to increase now</td>
+          <td>Once the GPU upgrade (RTX 3060 12GB) is installed, re-run the chunk size / embedding batch size / context window assumptions empirically rather than trusting the paper numbers. Current values (500 token chunks, 50 overlap, batch_size=50, EXPLAIN_CONTEXT_WINDOW=4096 — GENERATE_CONTEXT_WINDOW no longer exists, deleted with generate.py) were tuned around the GTX 1060 6GB constraint and may have headroom to increase now</td>
           <td>Leaving conservative settings in place after a hardware upgrade isn't harmful, just leaves performance on the table</td>
         </tr>
       </tbody>
@@ -1058,10 +990,35 @@
   </section>
 
 
-  <!-- 8. SESSION CHECKLIST -->
-  <section class="section" id="session">
+  <!-- 8. DEPRECATED FEATURES -->
+  <section class="section" id="deprecated">
     <div class="section-header">
       <span class="section-num">8</span>
+      <h1 class="section-title">Deprecated Features</h1>
+    </div>
+
+    <p>The Patch Generator and Guided Spec Builder features were removed entirely from this codebase. This section is the connective tissue between the old scope (described historically in implementation_plan.md's Phase 3/4 entries, which are not deleted — they're real project history) and the current scope. If anything elsewhere in this document mentions generate.py, guided.py, or classify.py, treat it as historical unless this section says otherwise.</p>
+
+    <div class="warn"><strong>Why:</strong> the project is pivoting toward Max 9 and a possible custom MCP server for patch generation, rather than continuing to maintain an in-repo LLM generation/validation loop. Scope has refocused to explain / document search / patch analysis.</div>
+
+    <p><strong>Removed backend:</strong> assistant/generate.py, assistant/guided.py, assistant/classify.py (deleted entirely — its only purpose was routing between EXPLAIN/GENERATE/GUIDED intents, and with two of three destinations gone, classification was pointless). Routes /api/generate and /api/ws/guided removed from server.py, along with their four WebSocket helper functions. GENERATE_MODEL, GENERATE_CONTEXT_WINDOW, GUIDED_MODEL, GUIDED_CONTEXT_WINDOW removed from config.py. GENERATE_SYSTEM_PROMPT, GUIDED_SYSTEM_PROMPT, GUIDED_LEARNING_SYSTEM_PROMPT, GUIDED_SPEC_EXTRACTION_SYSTEM_PROMPT removed from prompts.py. CLI --mode generate and --mode guided removed from assistant.py; --mode auto removed too, since its only job was routing to generate/guided — an "auto" mode that always resolves to explain isn't auto-detecting anything.</p>
+
+    <p><strong>Removed frontend:</strong> ui/src/components/Generator.jsx, ui/src/components/GuidedBuilder.jsx. Their tabs, imports, and tab panes removed from App.jsx. connectGuidedWebSocket() and streamGenerate() removed from ui/src/services/api.js — streamPost() and validatePatch() were confirmed shared/intentionally-kept and left alone.</p>
+
+    <p><strong>Removed tests:</strong> tests/test_generate_guided.py deleted entirely. tests/test_server.py lost test_generate_endpoint_streaming, test_websocket_guided_initialization, test_generate_cancellation. tests/test_validate.py was untouched — confirmed fully independent of generate/guided the whole time.</p>
+
+    <p><strong>Kept intentionally, not deleted:</strong> assistant/validate.py (standalone, zero dependency on the removed modules — see §2) and the new assistant/object_reference.py (the MAXCLASS/inlet-outlet reference table rescued from GENERATE_SYSTEM_PROMPT rather than deleted with it). Neither is wired into an active feature today; both are foundation for a planned future patch-analyzer feature.</p>
+
+    <p><strong>Orphaned/repurposed data:</strong> data/personal_idioms.md is orphaned — guided.py was its only reader/writer; the file is left on disk, untouched. data/example_patches/max/ and data/example_patches/m4l/ are repurposed, not orphaned — their fixtures are actively loaded by test_validate.py independent of the deleted generation feature. See §5 for the full breakdown.</p>
+
+    <p>For the detailed history of how these features were originally designed and built, see the Phase 3/4 entries in implementation_plan.md — marked deprecated there, not deleted.</p>
+  </section>
+
+
+  <!-- 9. SESSION CHECKLIST -->
+  <section class="section" id="session">
+    <div class="section-header">
+      <span class="section-num">9</span>
       <h1 class="section-title">Session Checklist</h1>
     </div>
 
@@ -1086,7 +1043,7 @@
         <tr><td>Review exactly what changed</td><td><code style="font-family:var(--mono);font-size:11px;color:var(--green)">git diff HEAD</code></td></tr>
         <tr><td>Confirm no unintended files were touched</td><td><code style="font-family:var(--mono);font-size:11px;color:var(--green)">git diff HEAD --name-only</code></td></tr>
         <tr><td>Confirm no new constants duplicate config.py</td><td>Grep for BASE_DIR, INDEX_PATH, MODEL names in changed files</td></tr>
-        <tr><td>Confirm no inline prompt strings were introduced</td><td>Grep for triple-quoted strings in explain/generate/guided</td></tr>
+        <tr><td>Confirm no inline prompt strings were introduced</td><td>Grep for triple-quoted strings in explain.py or any other assistant/ module</td></tr>
         <tr><td>Confirm no push has happened without approval</td><td>Check git log vs remote</td></tr>
       </tbody>
     </table>
