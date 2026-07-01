@@ -340,17 +340,25 @@ def validate_patch(
 
     # 8. M4L Domain-Specific Validations
     device_type = device_type_override or "unknown"
-    
-    # Inferred domain if any live. objects or plugin~/plugout~ are present
-    has_live_objects = (
-        any(b.maxclass.startswith("live.") for b in boxes) or
-        has_object(["plugin~", "plugout~", "live.thisdevice", "live.path", "live.observer", "live.object", "live.remote~"])
-    )
-    if has_live_objects and domain != "m4l":
-        domain = "m4l"
-        warnings.append("Patch contains Live API / M4L UI objects. Automatically treating domain as 'm4l'.")
 
-    if domain == "m4l":
+    def m4l_only_name(b):
+        name = b.maxclass
+        if name == "newobj" and b.text:
+            parts = b.text.strip().split()
+            if parts:
+                name = parts[0]
+        if name.startswith("live.") or name in ("plugin~", "plugout~"):
+            return name
+        return None
+
+    m4l_only_hits = [(b.id, name) for b in boxes for name in [m4l_only_name(b)] if name]
+
+    if domain != "m4l":
+        # Domain was not requested as M4L — any M4L-only object is a validation
+        # error to remove, not a signal to reclassify the whole patch.
+        for box_id, name in m4l_only_hits:
+            errors.append(f"Box '{box_id}' uses M4L-only object '{name}' in a patch scoped to general Max/MSP — remove it.")
+    else:
         # Check presence of M4L anchors
         has_plugin = has_object("plugin~")
         has_plugout = has_object("plugout~")
@@ -423,7 +431,7 @@ def validate_patch(
             if not has_midiout:
                 errors.append("M4L MIDI Effect must contain a MIDI output object (like 'midiout' or 'noteout').")
 
-    elif domain == "msp":
+    if domain == "msp":
         # Must check both maxclass and newobj text — correctly generated tilde
         # objects use maxclass: newobj with the object name in the text field.
         has_dsp = any(
