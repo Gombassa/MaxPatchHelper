@@ -2,6 +2,7 @@
 data/chroma/
 data/raw/
 data/chunks.json
+data/failed_attempts/
 
 # Example Patches & Personal Idioms (Keep Local)
 data/example_patches/

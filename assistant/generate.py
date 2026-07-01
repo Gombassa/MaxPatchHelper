@@ -3,6 +3,7 @@ import sys
 import json
 import requests
 import threading
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from assistant.retrieve import query_vector_db
 from assistant.explain import load_inlet_outlet_index, load_lom_schema, detect_m4l_context
@@ -11,6 +12,7 @@ from assistant.config import OLLAMA_CHAT_URL, GENERATE_CONTEXT_WINDOW, GENERATE_
 from assistant.prompts import GENERATE_SYSTEM_PROMPT
 EXAMPLE_MAX_PATCH_PATH = os.path.join(DATA_DIR, "example_patches", "max", "sine_generator.json")
 EXAMPLE_M4L_PATCH_PATH = os.path.join(DATA_DIR, "example_patches", "m4l", "audio_effect_volume.json")
+FAILED_ATTEMPTS_DIR = os.path.join(DATA_DIR, "failed_attempts")
 
 GENERATE_USER_TEMPLATE = """Below is the context to help you design and output a valid Max MSP / M4L patch.
 
@@ -62,6 +64,38 @@ def extract_json_block(text: str) -> str:
         return text[start:end + 1].strip()
     except ValueError:
         return text.strip()
+
+def log_failed_attempt(query_text: str, domain: str, patch_dict: Dict[str, Any], errors: List[str], attempt: int) -> None:
+    """Writes a failed validation attempt to disk for post-hoc diagnosis. Never raises."""
+    try:
+        os.makedirs(FAILED_ATTEMPTS_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(FAILED_ATTEMPTS_DIR, f"{timestamp}_attempt{attempt}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({
+                "query_text": query_text,
+                "domain": domain,
+                "patch": patch_dict,
+                "errors": errors,
+            }, f, indent=2)
+    except Exception as e:
+        print(f"[Generate] Warning: failed to write failed-attempt log: {e}")
+
+def log_failed_parse(query_text: str, domain: str, raw_text: str, attempt: int) -> None:
+    """Writes an unparseable LLM response to disk for post-hoc diagnosis. Never raises."""
+    try:
+        os.makedirs(FAILED_ATTEMPTS_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(FAILED_ATTEMPTS_DIR, f"{timestamp}_attempt{attempt}_parsefail.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({
+                "query_text": query_text,
+                "domain": domain,
+                "raw_response": raw_text,
+                "errors": [f"JSON parsing error"],
+            }, f, indent=2)
+    except Exception as e:
+        print(f"[Generate] Warning: failed to write failed-parse log: {e}")
 
 def generate_patch(
     query_text: str, 
@@ -219,11 +253,13 @@ def generate_patch(
                     print(f"[Generate] Validation failed on attempt {attempt}: {validation_errors}")
                     if callback:
                         callback({"type": "status", "content": f"[Generate] Validation failed on attempt {attempt}: {validation_errors}"})
+                    log_failed_attempt(query_text, domain, patch_dict, validation_errors, attempt)
             except json.JSONDecodeError as je:
                 validation_errors = [f"JSON parsing error: {je}"]
                 print(f"[Generate] JSON parsing failed on attempt {attempt}: {je}")
                 if callback:
                     callback({"type": "status", "content": f"[Generate] JSON parsing failed on attempt {attempt}: {je}"})
+                log_failed_parse(query_text, domain, full_response, attempt)
                 
             # If we haven't exhausted attempts, append context and error report to retry
             if attempt < max_attempts:
