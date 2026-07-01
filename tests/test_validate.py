@@ -174,3 +174,92 @@ def test_validate_invalid_live_objects():
     assert any("Invalid object class 'live.control' in box 'obj-1'" in err for err in result_direct["errors"])
 
 
+def test_validate_m4l_object_in_general_domain():
+    """Verify M4L-only objects in a patch scoped to general Max/MSP are flagged as
+    itemized errors, not silently reclassified to domain 'm4l' with M4L requirements enforced."""
+    patch_data = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "newobj", "text": "plugout~", "numinlets": 2, "numoutlets": 0}},
+                {"box": {"id": "obj-2", "maxclass": "live.thisdevice", "numinlets": 0, "numoutlets": 2}}
+            ]
+        }
+    }
+    result = validate_patch(patch_data, domain_override="msp")
+    assert result["valid"] is False
+    assert result["domain"] == "msp"
+    assert any("M4L-only object 'plugout~'" in err and "remove it" in err for err in result["errors"])
+    assert any("M4L-only object 'live.thisdevice'" in err and "remove it" in err for err in result["errors"])
+    assert not any("must contain a" in err for err in result["errors"])
+
+def test_validate_m4l_object_in_m4l_domain_unchanged():
+    """Verify the same M4L objects are legitimate when the domain actually is 'm4l' —
+    guards the existing M4L enforcement path from ever being broken by future edits."""
+    patch_data = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "newobj", "text": "plugout~", "numinlets": 2, "numoutlets": 0}},
+                {"box": {"id": "obj-2", "maxclass": "live.thisdevice", "numinlets": 0, "numoutlets": 2}}
+            ]
+        }
+    }
+    result = validate_patch(patch_data, domain_override="m4l")
+    assert result["domain"] == "m4l"
+    assert not any("M4L-only object" in err for err in result["errors"])
+
+def test_validate_signal_control_inlet_conflict():
+    """Verify that dac~ is flagged when the same inlet receives both a signal-rate
+    audio source (cycle~) and a control-rate source (toggle) — they cannot share an inlet."""
+    patch_data = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "newobj", "text": "cycle~ 440", "numinlets": 2, "numoutlets": 1}},
+                {"box": {"id": "obj-2", "maxclass": "toggle", "numinlets": 1, "numoutlets": 1}},
+                {"box": {"id": "obj-3", "maxclass": "newobj", "text": "dac~", "numinlets": 2, "numoutlets": 0}}
+            ],
+            "lines": [
+                {"patchline": {"source": ["obj-1", 0], "destination": ["obj-3", 0]}},
+                {"patchline": {"source": ["obj-2", 0], "destination": ["obj-3", 0]}}
+            ]
+        }
+    }
+    result = validate_patch(patch_data)
+    assert result["valid"] is False
+    assert any(
+        "Object 'obj-3' (dac~) inlet 0 receives both a signal-rate audio input and a control-rate message" in err
+        for err in result["errors"]
+    )
+
+def test_validate_m4l_device_type_enforcement():
+    """Verify M4L Instrument device-type enforcement: both required anchors (plugout~ and
+    a MIDI input object) are checked independently once device_type is classified as 'instrument'."""
+    # Sub-case a: MIDI input present, but no plugout~
+    patch_missing_plugout = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "newobj", "text": "notein", "numinlets": 0, "numoutlets": 3}}
+            ]
+        }
+    }
+    result_a = validate_patch(patch_missing_plugout, domain_override="m4l", device_type_override="instrument")
+    assert result_a["valid"] is False
+    assert any("M4L Instrument must contain a 'plugout~' object." in err for err in result_a["errors"])
+
+    # Sub-case b: plugout~ present, but no MIDI input object
+    patch_missing_midiin = {
+        "patcher": {
+            "fileversion": 1,
+            "boxes": [
+                {"box": {"id": "obj-1", "maxclass": "newobj", "text": "plugout~", "numinlets": 2, "numoutlets": 0}}
+            ]
+        }
+    }
+    result_b = validate_patch(patch_missing_midiin, domain_override="m4l", device_type_override="instrument")
+    assert result_b["valid"] is False
+    assert any("M4L Instrument must contain a MIDI input object (like 'midiin' or 'notein')." in err for err in result_b["errors"])
+
+

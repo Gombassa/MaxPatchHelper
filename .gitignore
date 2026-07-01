@@ -4,8 +4,7 @@ data/raw/
 data/chunks.json
 data/failed_attempts/
 
-# Example Patches & Personal Idioms (Keep Local)
-data/example_patches/
+# Personal Idioms (Keep Local)
 data/personal_idioms.md
 data/lom_reference.json
 data/inlet_outlet_index.json
